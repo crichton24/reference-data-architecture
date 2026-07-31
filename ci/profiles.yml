@@ -1,0 +1,13 @@
+# Dummy credentials so `dbt parse` can compile in CI without secrets.
+# dbt parse does not open a connection — these values are never used.
+nyc_transit:
+  target: ci
+  outputs:
+    ci:
+      type: databricks
+      host: ci.invalid
+      http_path: /sql/1.0/warehouses/ci
+      token: not-a-real-token
+      catalog: nyc_transit
+      schema: ci
+      threads: 1

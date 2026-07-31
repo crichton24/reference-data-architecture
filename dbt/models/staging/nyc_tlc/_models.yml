@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_yellow_trips
+    description: Yellow taxi trips, renamed and typed. One row per trip.
+    columns:
+      - name: pickup_at
+        tests: [not_null]
+      - name: pickup_zone_id
+        tests: [not_null]
+      - name: total_amount
+        description: >
+          Not tested for positivity — TLC data legitimately contains negative
+          totals for voided and refunded trips. Filtered in marts, not here.

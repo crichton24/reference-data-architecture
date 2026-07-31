@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same branch instead of queueing them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Works out which parts of the monorepo changed. Every other job keys off
+  # this, so a dbt-only PR doesn't run the Terraform checks.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      airflow: ${{ steps.filter.outputs.airflow }}
+      dbt: ${{ steps.filter.outputs.dbt }}
+      databricks: ${{ steps.filter.outputs.databricks }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            airflow:
+              - 'airflow/**'
+              - '.github/workflows/ci.yml'
+            dbt:
+              - 'dbt/**'
+              - 'ci/**'
+            databricks:
+              - 'databricks/**'
+            infra:
+              - 'infra/**'
+
+  airflow:
+    needs: changes
+    if: needs.changes.outputs.airflow == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r airflow/requirements.txt
+          pip install pytest ruff
+      - name: Lint
+        run: ruff check airflow/
+      - name: DAG integrity
+        # Imports every DAG. Catches syntax errors, missing instantiation
+        # calls, bad imports, and cycles — without needing a scheduler.
+        run: cd airflow && python -m pytest tests/ -v
+
+  dbt:
+    needs: changes
+    if: needs.changes.outputs.dbt == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: pip install dbt-databricks sqlfluff sqlfluff-templater-dbt
+      - name: Lint SQL
+        run: sqlfluff lint dbt/models --disable-progress-bar
+      - name: Parse project
+        # `dbt parse` compiles the DAG without connecting to a warehouse, so
+        # this needs no secrets. ci/profiles.yml holds dummy credentials.
+        run: |
+          cd dbt
+          dbt deps
+          dbt parse --profiles-dir ../ci
+
+  databricks:
+    needs: changes
+    if: needs.changes.outputs.databricks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install sqlfluff
+      - name: Lint DDL
+        run: sqlfluff lint databricks/ddl --dialect databricks --disable-progress-bar
+      # Requires DATABRICKS_HOST and DATABRICKS_TOKEN as repo secrets.
+      # Uncomment once those are configured.
+      # - name: Validate bundle
+      #   env:
+      #     DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      #     DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      #   run: |
+      #     curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+      #     databricks bundle validate -t dev
+
+  infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate

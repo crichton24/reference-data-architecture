@@ -1,0 +1,39 @@
+# Databricks Asset Bundle — declarative job and notebook deployment.
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#
+# Preferred over exporting notebooks by hand: jobs, cluster config, and
+# notebooks version together and deploy per-environment from CI.
+
+bundle:
+  name: nyc_transit
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${var.databricks_host}
+
+  prod:
+    mode: production
+    workspace:
+      host: ${var.databricks_host}
+      root_path: /Shared/.bundle/nyc_transit/prod
+
+variables:
+  databricks_host:
+    description: Workspace URL
+    default: https://your-workspace.cloud.databricks.com
+
+resources:
+  jobs:
+    bronze_maintenance:
+      name: "[${bundle.target}] bronze maintenance"
+      schedule:
+        quartz_cron_expression: "0 0 4 ? * SUN"
+        timezone_id: America/New_York
+      tasks:
+        - task_key: optimize_bronze
+          notebook_task:
+            notebook_path: ./notebooks/optimize_bronze.py

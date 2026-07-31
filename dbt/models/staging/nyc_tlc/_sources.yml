@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Raw TLC trip records loaded by the nyc_tlc_load_bronze Airflow DAG.
+      Append-only. Deduplication and type correction happen downstream.
+    database: nyc_transit
+    schema: bronze
+
+    # Bronze goes stale when TLC hasn't published. The warn threshold is
+    # deliberately wider than the two-month nominal lag.
+    freshness:
+      warn_after: {count: 75, period: day}
+      error_after: {count: 120, period: day}
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: yellow_trips
+        description: Yellow medallion taxi trips.
+        columns:
+          - name: period
+            description: Source file's month, from the S3 partition path (YYYY-MM).
+            tests: [not_null]
+          - name: _source_file
+            description: Full S3 path of the file this row came from.
+            tests: [not_null]
+
+      - name: green_trips
+        description: Green (boro) taxi trips.
+        columns:
+          - name: period
+            tests: [not_null]
+          - name: _source_file
+            tests: [not_null]

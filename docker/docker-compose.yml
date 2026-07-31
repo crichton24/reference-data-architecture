@@ -1,0 +1,84 @@
+# Local development stack.
+#
+# Airflow and dbt run as separate services with separate images. That's a
+# runtime boundary, not a repo boundary — see ADR 0002. Both build from
+# directories in this same repo.
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# Airflow UI: http://localhost:8080  (admin / admin)
+
+x-airflow-common: &airflow-common
+  build:
+    context: ../airflow
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW_CONN_AWS_DEFAULT: '{"conn_type":"aws","login":"${AWS_ACCESS_KEY_ID}","password":"${AWS_SECRET_ACCESS_KEY}","extra":{"region_name":"${AWS_DEFAULT_REGION}"}}'
+    AIRFLOW_CONN_DATABRICKS_DEFAULT: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}'
+  volumes:
+    # Only the dags subdirectory is mounted, not the repo root. This is the
+    # monorepo accommodation described in ADR 0002.
+    - ../airflow/dags:/opt/airflow/dags
+    - ../airflow/plugins:/opt/airflow/plugins
+    - airflow-logs:/opt/airflow/logs
+  env_file: ../.env
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - airflow db migrate && airflow users create --username admin --password admin
+        --firstname a --lastname b --role Admin --email admin@example.com || true
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Not long-running. Invoke it on demand:
+  #   docker compose -f docker/docker-compose.yml run --rm dbt run
+  dbt:
+    build:
+      context: ../dbt
+    env_file: ../.env
+    volumes:
+      - ../dbt:/dbt
+    profiles: ["tools"]
+
+volumes:
+  postgres-data:
+  airflow-logs:
