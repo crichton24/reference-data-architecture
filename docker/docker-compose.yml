@@ -1,12 +1,25 @@
-# Local development stack.
+# Local development stack — Airflow 3.3.0
 #
 # Airflow and dbt run as separate services with separate images. That's a
 # runtime boundary, not a repo boundary — see ADR 0002. Both build from
 # directories in this same repo.
 #
-#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose --env-file .env -f docker/docker-compose.yml up -d
 #
-# Airflow UI: http://localhost:8080  (admin / admin)
+# Airflow UI: http://localhost:8080
+#
+# WHAT CHANGED FROM THE 2.x VERSION
+#   - `webserver` is now `api-server`. Same port, different command.
+#   - `dag-processor` is now a separate required service. In Airflow 3 the
+#     scheduler no longer parses DAG files itself — that moved out under
+#     AIP-72 so tasks and parsing are isolated from the metadata DB.
+#   - `triggerer` added. Not strictly required with no deferrable operators,
+#     but cheap and you'll want it the moment you use one.
+#   - JWT secret required. The api-server issues tokens for task execution.
+#   - Execution API URL required so tasks know where to call back to.
+#
+# Still LocalExecutor — no Redis, no Celery workers. The official quickstart
+# uses CeleryExecutor, which is more machinery than a laptop needs.
 
 x-airflow-common: &airflow-common
   build:
@@ -15,6 +28,24 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+    #disables authentication and lets everyone in as admin.  fine since it's running on localhost and not exposed to the internet.  see https://airflow.apache.org/docs/apache-airflow/stable/security/authentication.html#simple-auth-manager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: 'true'
+
+    # New in 3.x. Tasks talk to the api-server rather than the metadata DB
+    # directly, so they need to know where it lives.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__API__BASE_URL: http://localhost:8080
+
+    # Signs the JWTs the api-server hands out. Any stable random string works
+    # locally; it must be identical across all services.
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-local-dev-change-me}
+
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+
+    # Connections stay as environment variables — see ADR 0006. They will NOT
+    # appear in the UI under Admin > Connections. Inspect them with:
+    #   docker compose exec airflow-scheduler airflow connections get aws_default
     AIRFLOW_CONN_AWS_S3_NYC_TLC: '{"conn_type":"aws","login":"${AWS_ACCESS_KEY_ID}","password":"${AWS_SECRET_ACCESS_KEY}","extra":{"region_name":"${AWS_DEFAULT_REGION}"}}'
     AIRFLOW_CONN_DATABRICKS_DEFAULT: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}'
   volumes:
@@ -23,7 +54,7 @@ x-airflow-common: &airflow-common
     - ../airflow/dags:/opt/airflow/dags
     - ../airflow/plugins:/opt/airflow/plugins
     - airflow-logs:/opt/airflow/logs
-  env_file: ../.env
+  user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
       condition: service_healthy
@@ -42,21 +73,38 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # Runs migrations and creates the admin user, then exits. `exited (0)` is
+  # success, not a failure.
+  #
+  # Unlike the 2.x version, this no longer calls `airflow users create` — in
+  # Airflow 3 the default SimpleAuthManager reads the _AIRFLOW_WWW_USER_*
+  # variables directly. Those two lines you added to .env are now load-bearing.
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
     command:
       - -c
-      - airflow db migrate && airflow users create --username admin --password admin
-        --firstname a --lastname b --role Admin --email admin@example.com || true
+      - airflow db migrate
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     restart: on-failure
 
-  airflow-webserver:
+  airflow-api-server:
     <<: *airflow-common
-    command: webserver
+    command: api-server
     ports:
       - "8080:8080"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -69,7 +117,26 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Not long-running. Invoke it on demand:
+  # New in Airflow 3. Parses DAG files and feeds the scheduler. Without this
+  # service running, your DAGs never appear — the scheduler won't parse them
+  # itself anymore.
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Not long-running. Invoke on demand:
   #   docker compose -f docker/docker-compose.yml run --rm dbt run
   dbt:
     build:

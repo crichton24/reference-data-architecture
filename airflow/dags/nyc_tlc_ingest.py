@@ -253,7 +253,7 @@ def nyc_tlc_ingest():
                 )
         return out
 
-    # -----------------------------------------------------------------------
+# -----------------------------------------------------------------------
     # TASK 3: ask the server which of those actually exist
     # -----------------------------------------------------------------------
     @task
@@ -262,26 +262,52 @@ def nyc_tlc_ingest():
 
         `dict | None` is a UNION type hint: this returns either a dict or the
         value None. None is Python's "nothing here" — like NULL in SQL.
+
+        DESIGN RULE: this task never fails. Every "can't get it" outcome
+        returns None instead of raising. A month that TLC hasn't published,
+        a transient CDN error, a timeout — all of them just mean "nothing to
+        fetch for this one right now," and tomorrow's run tries again. That's
+        the whole point of polling (ADR 0003). Raising here would let one bad
+        month block the seven good ones behind it.
         """
         # An HTTP HEAD request asks only for the headers, not the body. It's
         # how you check "does this file exist and how big is it" without
         # downloading 50 MB to find out.
-        resp = requests.head(
-            candidate["url"], timeout=REQUEST_TIMEOUT, allow_redirects=True
-        )
-
-        # 404 means TLC hasn't published this month yet. That's expected and
-        # normal, not a failure — so we return None rather than raising.
-        if resp.status_code == 404:
-            # Note the %s and the comma, rather than an f-string. The logging
-            # module only builds the final message if this log level is
-            # actually enabled. Minor here, meaningful in a hot loop.
-            log.info("Not published yet: %s", candidate["filename"])
+        #
+        # try/except catches connection-level failures — DNS, TLS, timeouts —
+        # which raise rather than returning a response object at all.
+        try:
+            resp = requests.head(
+                candidate["url"], timeout=REQUEST_TIMEOUT, allow_redirects=True
+            )
+        except requests.RequestException as exc:
+            log.warning("HEAD failed for %s: %s", candidate["filename"], exc)
             return None
 
-        # Any OTHER bad status (500, 403...) is a real problem. raise_for_status
-        # throws an exception, which fails the task, which triggers a retry.
-        resp.raise_for_status()
+        # Not published yet. Both codes mean the same thing here: CloudFront
+        # sits in front of a private S3 bucket, and when the bucket denies
+        # ListBucket, a missing object comes back 403 rather than 404 — S3
+        # won't confirm or deny existence to an unauthorized caller.
+        #
+        # Note the %s and comma rather than an f-string. The logging module
+        # only builds the message if this level is enabled. Minor here,
+        # meaningful in a hot loop.
+        if resp.status_code in (403, 404):
+            log.info(
+                "Not published yet (%s): %s", resp.status_code, candidate["filename"]
+            )
+            return None
+
+        # Anything else in the 4xx/5xx range is unexpected — a 503, a rate
+        # limit, a gateway error. Log it loudly so it's visible in the task
+        # log, but still don't fail: it's almost certainly transient, and the
+        # next daily run will pick the file up.
+        if resp.status_code >= 400:
+            log.warning(
+                "Unexpected %s for %s — will retry next run",
+                resp.status_code, candidate["filename"],
+            )
+            return None
 
         # An ETag is a fingerprint of the file's contents that S3 and most web
         # servers provide. If the ETag is unchanged, the file is unchanged.
@@ -320,7 +346,12 @@ def nyc_tlc_ingest():
     # -----------------------------------------------------------------------
     # TASK 4: drop the Nones
     # -----------------------------------------------------------------------
-    @task
+    # trigger_rule="none_failed" is defensive. probe is written never to fail,
+    # but if a future change breaks that promise, the default "all_success"
+    # rule would skip this task and silently stall the whole DAG. This says
+    # "run as long as nothing actually failed," so one bad mapped instance
+    # can't block the others.
+    @task(trigger_rule="none_failed")
     def to_fetch(probed: list[dict | None]) -> list[dict]:
         """Filter out the candidates that weren't available or were unchanged."""
         # A LIST COMPREHENSION. Read right to left: "for each p in probed, if p
@@ -330,7 +361,6 @@ def nyc_tlc_ingest():
         targets = [p for p in probed if p]
         log.info("%d file(s) to ingest this run", len(targets))
         return targets
-
     # -----------------------------------------------------------------------
     # TASK 5: actually download
     # -----------------------------------------------------------------------
