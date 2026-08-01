@@ -96,7 +96,7 @@ DATASETS = ("yellow", "green")
 LAG_MONTHS = 2       # TLC's nominal publication delay
 LOOKBACK_MONTHS = 8  # how many months back we re-check on every run
 
-BUCKET = "nyc-tlc-raw-data-105803061132-us-east-1-an"
+BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
 LANDING_PREFIX = "nyc_tlc"
 
 # An f-string. The `f` prefix lets you drop variables directly into a string
