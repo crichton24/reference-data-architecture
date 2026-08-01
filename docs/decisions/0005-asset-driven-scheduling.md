@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-The bronze loader must run after the ingest DAG lands files. Ingest runs daily
+The raw loader must run after the ingest DAG lands files. Ingest runs daily
 but produces files roughly once a month — on most days there is nothing to
 load.
 

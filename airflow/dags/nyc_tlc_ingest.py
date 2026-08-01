@@ -96,8 +96,8 @@ DATASETS = ("yellow", "green")
 LAG_MONTHS = 2       # TLC's nominal publication delay
 LOOKBACK_MONTHS = 8  # how many months back we re-check on every run
 
-BUCKET = "your-lakehouse-bucket"
-LANDING_PREFIX = "landing/nyc_tlc"
+BUCKET = "nyc-tlc-raw-data-105803061132-us-east-1-an"
+LANDING_PREFIX = "nyc_tlc"
 
 # An f-string. The `f` prefix lets you drop variables directly into a string
 # inside curly braces, instead of gluing pieces together with +.
@@ -105,7 +105,7 @@ MANIFEST_KEY = f"{LANDING_PREFIX}/_manifest.json"
 
 # The name of an Airflow Connection you set up in the UI (Admin > Connections).
 # Credentials live there, encrypted — never hardcoded in a DAG file.
-AWS_CONN_ID = "aws_default"
+AWS_CONN_ID = "aws_s3_nyc_tlc"
 
 REQUEST_TIMEOUT = 60  # seconds; always set one, or a hung server hangs your task
 
@@ -145,7 +145,7 @@ def _s3() -> S3Hook:
 #
 # Practically: it turns an ordinary Python function into an Airflow workflow.
 @dag(
-    dag_id="nyc_tlc_ingest",      # unique name shown in the UI
+    dag_id="nyc_tlc_ingest_to_s3",      # unique name shown in the UI
 
     # Cron syntax: minute hour day-of-month month day-of-week.
     # "0 7 * * *" = 7:00 AM every day.
@@ -168,7 +168,7 @@ def _s3() -> S3Hook:
     # Network calls fail transiently; retries turn a 3 AM page into a non-event.
     default_args={"retries": 3, "retry_delay": pendulum.duration(minutes=10)},
 
-    tags=["nyc-transit", "bronze", "batch"],  # UI filter labels
+    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC"],  # UI filter labels
     doc_md=__doc__,  # __doc__ is the triple-quoted string at the top of this
                      # file; this renders it into the UI as documentation
 )

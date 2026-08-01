@@ -1,4 +1,4 @@
-# 0004. Load bronze with COPY INTO
+# 0004. Load raw with COPY INTO
 
 Date: 2026-07-31
 Status: Accepted
@@ -30,7 +30,7 @@ month, and on Databricks Free Edition serverless it can't use time-based
 triggers anyway, so it would run in the same micro-batch mode COPY INTO already
 provides — with more moving parts.
 
-**`MERGE INTO`.** Solves a problem this layer doesn't have. Bronze is
+**`MERGE INTO`.** Solves a problem this layer doesn't have. Raw is
 append-only by design; deduplication and correction belong in silver.
 
 ## Consequences

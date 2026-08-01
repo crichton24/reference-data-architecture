@@ -1,10 +1,10 @@
 .PHONY: up down logs test lint dbt-parse dag-test fmt
 
 up:            ## start the local stack
-	docker compose -f docker/docker-compose.yml up -d
+	docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 down:          ## stop it and remove volumes
-	docker compose -f docker/docker-compose.yml down -v
+	docker compose --env-file .env -f docker/docker-compose.yml down -v
 
 logs:
 	docker compose -f docker/docker-compose.yml logs -f

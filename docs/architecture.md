@@ -5,22 +5,22 @@
 Two ingestion paths converge on a Databricks lakehouse governed by Unity
 Catalog. Batch data arrives monthly and irregularly; streaming data arrives
 continuously. Both land as files in S3 before entering the lakehouse, so the
-bronze layer has exactly one entry pattern regardless of source cadence.
+raw layer has exactly one entry pattern regardless of source cadence.
 
 ## Layers
 
 | Layer | Contents | Materialization | Owner |
 |---|---|---|---|
 | Landing | Source files, untouched, partitioned by dataset and period | S3 objects | Airflow |
-| Bronze | Raw rows plus lineage columns, append-only | Delta tables | Airflow (COPY INTO) |
+| Raw | Raw rows plus lineage columns, append-only | Delta tables | Airflow (COPY INTO) |
 | Staging | Renamed, typed, one row per source row | Views | dbt |
 | Marts | Dimensional models | Tables | dbt |
 | Serving | Agent-facing tools over marts | UC functions | MCP |
 
-Bronze is deliberately dumb. No deduplication, no filtering, no type coercion
+Raw is deliberately dumb. No deduplication, no filtering, no type coercion
 beyond what Parquet already carries. Everything that could be wrong is a
 downstream concern, which means a bad transformation is always fixable by
-rebuilding from bronze rather than re-downloading from the source.
+rebuilding from raw rather than re-downloading from the source.
 
 ## Orchestration
 
@@ -54,7 +54,7 @@ supplied through environment variables in `docker-compose.yml` rather than the
 UI, so local setup is reproducible from `.env`.
 
 **Databricks.** A SQL warehouse. A Unity Catalog storage credential wrapping
-the IAM role, an external location over `s3://<bucket>/landing/`, and a
+the IAM role, an external location over `s3://nyc-tlc-raw-data-105803061132-us-east-1-an/nyc_tlc/`, and a
 `READ FILES` grant. Run `databricks/ddl/` in numeric order.
 
 ## Known gaps
