@@ -51,6 +51,9 @@ make test                     # DAG integrity + dbt parse + lint
 Full setup, including the AWS and Databricks prerequisites, is in
 [`docs/architecture.md`](docs/architecture.md).
 
+## Contributing
+Review git commit standards here:  `docs/standards/commit-conventions.md`
+
 ## Status
 
 | Component | State |
