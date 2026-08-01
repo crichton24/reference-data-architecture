@@ -1,6 +1,5 @@
-apache-airflow-providers-amazon>=8.25.0
-apache-airflow-providers-databricks>=6.8.0
-apache-airflow-providers-common-sql>=1.14.0
-requests>=2.32.0
-pyarrow>=16.0.0
-pendulum>=3.0.0
+apache-airflow-providers-amazon
+apache-airflow-providers-databricks
+apache-airflow-providers-common-sql
+requests
+pyarrow
