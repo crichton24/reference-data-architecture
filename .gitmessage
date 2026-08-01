@@ -1,0 +1,10 @@
+# <type>(<scope>): <subject>            <- 50 chars, imperative, no period
+#
+# Why this change? What was the previous behavior?
+# What alternatives were rejected?
+# Wrap at 72 characters.
+#
+# Refs:
+#
+# Types:  feat fix docs refactor test chore perf revert
+# Scopes: airflow dbt databricks infra docker ci docs
