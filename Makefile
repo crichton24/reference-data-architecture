@@ -5,6 +5,8 @@ up:            ## start the local stack
 
 down:          ## stop it and remove volumes
 	docker compose --env-file .env -f docker/docker-compose.yml down -v
+			   ## stop it and keep volumes (retains history in airflow)
+	docker compose --env-file .env -f docker/docker-compose.yml down
 
 logs:
 	docker compose -f docker/docker-compose.yml logs -f
