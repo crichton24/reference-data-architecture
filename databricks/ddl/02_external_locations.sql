@@ -16,8 +16,4 @@
 
 -- grant read files on external location nyc_tlc_raw to `REPLACE_PRINCIPAL`;
 
-
 --needs to be done in cli
-
-
-arn:aws:iam::105803061132:role/databricks-s3-nyc-tlc-raw-role
