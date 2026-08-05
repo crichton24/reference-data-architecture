@@ -97,7 +97,7 @@ LAG_MONTHS = 2       # TLC's nominal publication delay
 LOOKBACK_MONTHS = 8  # how many months back we re-check on every run
 
 BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
-LANDING_PREFIX = "nyc_tlc"
+LANDING_PREFIX = "nyc-tlc"
 
 # An f-string. The `f` prefix lets you drop variables directly into a string
 # inside curly braces, instead of gluing pieces together with +.
@@ -168,7 +168,7 @@ def _s3() -> S3Hook:
     # Network calls fail transiently; retries turn a 3 AM page into a non-event.
     default_args={"retries": 3, "retry_delay": pendulum.duration(minutes=10)},
 
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC"],  # UI filter labels
+    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","SOURCE_TO_S3"],  # UI filter labels
     doc_md=__doc__,  # __doc__ is the triple-quoted string at the top of this
                      # file; this renders it into the UI as documentation
 )

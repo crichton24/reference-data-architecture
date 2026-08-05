@@ -47,7 +47,7 @@ x-airflow-common: &airflow-common
     # appear in the UI under Admin > Connections. Inspect them with:
     #   docker compose exec airflow-scheduler airflow connections get aws_default
     AIRFLOW_CONN_AWS_S3_NYC_TLC: '{"conn_type":"aws","login":"${AWS_ACCESS_KEY_ID}","password":"${AWS_SECRET_ACCESS_KEY}","extra":{"region_name":"${AWS_DEFAULT_REGION}"}}'
-    AIRFLOW_CONN_DATABRICKS_DEFAULT: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}'
+    AIRFLOW_CONN_DATABRICKS_NYC_TLC: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}'
   volumes:
     # Only the dags subdirectory is mounted, not the repo root. This is the
     # monorepo accommodation described in ADR 0002.
