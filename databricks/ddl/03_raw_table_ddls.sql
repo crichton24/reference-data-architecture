@@ -12,7 +12,7 @@
 use catalog raw;
 use schema nyc_tlc;
 
-CREATE TABLE raw.nyc_tlc.yellow_trips (
+CREATE TABLE IF NOT EXISTS raw.nyc_tlc.yellow_trips (
   VendorID INT COMMENT 'A code indicating the TPEP provider that provided the record. 1=Creative Mobile Technologies, LLC; 2=VeriFone Inc.',
   tpep_pickup_datetime TIMESTAMP COMMENT 'The date and time when the meter was engaged',
   tpep_dropoff_datetime TIMESTAMP COMMENT 'The date and time when the meter was disengaged',
@@ -33,13 +33,19 @@ CREATE TABLE raw.nyc_tlc.yellow_trips (
   congestion_surcharge DECIMAL(10,2) COMMENT 'Total amount collected in trip for NYS congestion surcharge',
   airport_fee DECIMAL(10,2) COMMENT 'Airport fee for pick-ups only at LaGuardia and John F. Kennedy Airports',
 
+--METADATA
   period string COMMENT 'Inferred from the dataset=/period= S3 path by Hive-style partition discovery',
   _loaded_from STRING COLLATE UTF8_BINARY COMMENT 'The name of the file the record was ingested from',
   _loaded_at TIMESTAMP DEFAULT current_timestamp() COMMENT 'The timestamp when the record was ingested into the table',
-  _loaded_by STRING COLLATE UTF8_BINARY DEFAULT current_user() COMMENT 'The name of the user who ingested the record into the table')
+  _loaded_by STRING COLLATE UTF8_BINARY DEFAULT current_user() COMMENT 'The name of the user who ingested the record into the table',
+  _source_modified_at TIMESTAMP COMMENT 'The timestamp when the source file was last modified'
+)
 USING delta
 COMMENT 'NYC TLC Yellow Taxi trip records containing pickup/dropoff dates/times, locations, distances, fares, payment types, and passenger counts'
-
+tblproperties (
+    'delta.columnMapping.mode' = 'name',
+    'delta.feature.allowColumnDefaults' = 'supported'
+);
 
 -- Apply table-level governed tags
 ALTER TABLE yellow_trips SET TAGS (
@@ -54,7 +60,7 @@ ALTER TABLE yellow_trips SET TAGS (
   'dataPrimacy' = 'REPLICA'
 );
 
-create table if not exists green_trips (
+CREATE TABLE IF NOT EXISTS green_trips (
     vendorid                int COMMENT 'A code indicating the LPEP provider that provided the record. 1=Creative Mobile Technologies, LLC; 2=VeriFone Inc.',
     lpep_pickup_datetime    timestamp COMMENT 'The date and time when the meter was engaged',
     lpep_dropoff_datetime   timestamp COMMENT 'The date and time when the meter was disengaged',
@@ -77,15 +83,18 @@ create table if not exists green_trips (
     congestion_surcharge    double COMMENT 'Total amount collected in trip for NYS congestion surcharge',
     cbd_congestion_fee      double COMMENT 'CBD congestion surcharge collected during trip',
 
+  --METADATA
     period string COMMENT 'Inferred from the dataset=/period= S3 path by Hive-style partition discovery',
     _loaded_from STRING COLLATE UTF8_BINARY COMMENT 'The name of the file the record was ingested from',
     _loaded_at TIMESTAMP DEFAULT current_timestamp() COMMENT 'The timestamp when the record was ingested into the table',
-    _loaded_by STRING COLLATE UTF8_BINARY DEFAULT current_user() COMMENT 'The name of the user who ingested the record into the table')
+    _loaded_by STRING COLLATE UTF8_BINARY DEFAULT current_user() COMMENT 'The name of the user who ingested the record into the table',
+    _source_modified_at TIMESTAMP COMMENT 'The timestamp when the source file was last modified'
 )
 using delta
 comment 'NYC TLC Green Taxi trip records containing pickup/dropoff dates/times, locations, distances, fares, payment types, and passenger counts'
 tblproperties (
-    'delta.columnMapping.mode' = 'name'
+    'delta.columnMapping.mode' = 'name',
+    'delta.feature.allowColumnDefaults' = 'supported'
 );
 
 -- Apply table-level governed tags
