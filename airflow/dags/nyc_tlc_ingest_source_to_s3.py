@@ -145,7 +145,7 @@ def _s3() -> S3Hook:
 #
 # Practically: it turns an ordinary Python function into an Airflow workflow.
 @dag(
-    dag_id="nyc_tlc_ingest_to_s3",      # unique name shown in the UI
+    dag_id="nyc_tlc_ingest_source_to_s3",      # unique name shown in the UI
 
     # Cron syntax: minute hour day-of-month month day-of-week.
     # "0 7 * * *" = 7:00 AM every day.

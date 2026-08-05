@@ -65,9 +65,6 @@ LANDING_PREFIX = "nyc-tlc"
 # The trigger. Identical string to the producer's outlet, or this never fires.
 LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
 
-# What this DAG produces, so a dbt DAG can schedule on it later.
-BRONZE_ASSET = Asset("databricks://raw/nyc_tlc/trips")
-
 # THE SINGLE SOURCE OF TRUTH. One entry per table. Everything downstream —
 # task count, source paths, verification — derives from this dict, so adding
 # a dataset means adding one line and nothing else.
@@ -76,6 +73,18 @@ TABLES = {
     "green": "raw.nyc_tlc.green_trips",
     # "fhvhv": "raw.nyc_tlc.fhvhv_trips",   # ~450 MB/month, add deliberately
 }
+
+# What this DAG produces, so a dbt DAG can schedule on it later.
+# BRONZE_ASSETS = [
+#     Asset(f"databricks://raw/nyc_tlc/{table.split('.')[-1]}")
+#     for table in TABLES.values()
+# ]
+
+BRONZE_ASSETS = [
+    Asset("nyc-tlc://bronze/yellow"),
+    Asset("nyc-tlc://bronze/green"),
+]
+
 
 DATABRICKS_CONN_ID = "databricks_default"
 
@@ -96,7 +105,7 @@ def _sql_hook() -> DatabricksSqlHook:
 
 
 @dag(
-    dag_id="nyc_tlc_load_bronze",
+    dag_id="nyc_tlc_ingest_s3_to_databricks",
 
     # THE SCHEDULING ANSWER: a list of assets instead of a cron string. This
     # DAG is event-driven — it runs when LANDING_ASSET is updated.
@@ -175,7 +184,6 @@ def nyc_tlc_load_bronze():
             COPY INTO {target['table']}
             FROM {source_expr}
             FILEFORMAT = PARQUET
-            PATTERN = '*.parquet'
             FORMAT_OPTIONS ('mergeSchema' = 'true')
             COPY_OPTIONS  ('mergeSchema' = 'true')
         """
@@ -247,7 +255,7 @@ def nyc_tlc_load_bronze():
     # proceed on partial data while green is broken — use "one_success"
     # instead. That's a real tradeoff: faster downstream, but marts may be
     # built from an incomplete bronze.
-    @task(outlets=[BRONZE_ASSET], trigger_rule="none_failed_min_one_success")
+    @task(outlets=BRONZE_ASSETS, trigger_rule="none_failed_min_one_success")
     def publish_bronze(reports: list[dict]) -> None:
         log.info("Bronze refreshed: %s", reports)
 
