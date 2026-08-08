@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: stg_yellow_trips
+    description: Yellow taxi trips, renamed and typed. One row per trip.
+    columns:
+      - name: trip_key
+        description: Surrogate key. Not tested for uniqueness — see nyc_trips.
+      - name: pickup_at
+        description: True instant, converted from recorded Eastern wall clock.
+        tests: [not_null]
+      - name: tlc_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Yellow Taxi']
+
+  - name: stg_green_trips
+    description: Green taxi trips, aligned to the yellow column set.
+    columns:
+      - name: pickup_at
+        tests: [not_null]
+      - name: tlc_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Green Taxi']
+
+  - name: stg_taxi_zone_lookup
+    description: Zone reference with sentinel rows flagged.
+    columns:
+      - name: location_id
+        tests: [unique, not_null]

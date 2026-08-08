@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: nyc_tlc
+    description: >
+      Raw TLC trip records loaded by the nyc_tlc_load_bronze Airflow DAG.
+      Append-only. Schema follows TLC's Parquet exactly — deduplication and
+      type correction happen in staging, not here.
+    database: raw
+    schema: nyc_tlc
+
+    freshness:
+      warn_after: {count: 75, period: day}
+      error_after: {count: 120, period: day}
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: yellow_trips
+        description: Yellow medallion taxi trips.
+      - name: green_trips
+        description: Green (boro) taxi trips.
+      - name: taxi_zone_lookup
+        description: >
+          Zone reference, refreshed by the nyc_taxi_zone_lookup Airflow DAG.
+          Full replace on change, so no _loaded_at freshness check applies.
+        loaded_at_field: null
+        freshness: null

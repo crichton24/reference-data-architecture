@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: dim_vendor
+    description: >
+      Vendor dimension with SCD Type 2 validity windows, sourced from the
+      dim_vendor_snapshot. New vendor IDs are added automatically on each
+      snapshot run; name changes expire the prior row rather than overwriting.
+    columns:
+      - name: vendor_key
+        description: Surrogate key. Unique per version, not per vendor.
+        tests: [unique, not_null]
+      - name: vendor_id
+        description: TLC's natural key. NOT unique — one row per version.
+        tests: [not_null]
+      - name: vendor_name
+        tests: [not_null]
+      - name: is_unmapped
+        description: >
+          True when the vendor_id was seen in trip data but is missing from
+          the vendor_lookup seed. A true here is an action item: update the
+          seed from TLC's current data dictionary.
+      - name: is_current
+        tests: [not_null]
+
+    tests:
+      # Exactly one open version per vendor. Catches the classic SCD2 bug
+      # where an expire step fails and two rows both look current.
+      - dbt_utils.expression_is_true:
+          expression: >
+            (select count(*) from (
+               select vendor_id from {{ ref('dim_vendor') }}
+               where is_current group by vendor_id having count(*) > 1
+            )) = 0
+
+  - name: nyc_trips
+    description: >
+      Unified yellow and green taxi trips with vendor, rate code, payment
+      type, and trip type descriptions resolved. One row per trip.
+      Timestamps carried as both true instants (pickup_at) and recorded
+      Eastern wall clock (pickup_at_local).
+    columns:
+      - name: trip_key
+        description: >
+          Surrogate key over the natural trip attributes. Tested for
+          uniqueness here rather than in staging, since the merge strategy
+          depends on it.
+        tests: [unique, not_null]
+      - name: tlc_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Yellow Taxi', 'Green Taxi']
+      - name: vendor_name
+        tests: [not_null]
+#REMOVED -- can be null
+#      - name: rate_code_description
+#        tests: [not_null]
+#REMOVED -- can be null
+#      - name: payment_type_description
+#        tests: [not_null]
+      - name: pickup_at
+        tests: [not_null]
+      - name: trip_duration_minutes
+        description: >
+          Computed from instants, so DST transitions don't distort it.
+          Negative values exist in TLC data (clock errors, voided trips) and
+          are deliberately not filtered — that's a marts-consumer decision.
+      - name: total_amount
+        description: >
+          Not tested for positivity. TLC data legitimately contains negative
+          totals for voided and refunded trips.
+      - name: pickup_location_id
+        tests:
+          - relationships:
+              to: ref('stg_taxi_zone_lookup')
+              field: location_id
+              config:
+                severity: warn
+                error_if: ">100"

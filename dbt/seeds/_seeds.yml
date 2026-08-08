@@ -1,0 +1,42 @@
+version: 2
+
+seeds:
+  - name: vendor_lookup
+    description: >
+      Vendor ID to name, from the TLC data dictionary. Seeded rather than
+      derived because the mapping lives in TLC's published PDF, not in the
+      data itself. IDs appearing in trip data but missing here surface as
+      'Unknown vendor (<id>)' in dim_vendor rather than being dropped.
+    config:
+      column_types:
+        vendor_id: bigint
+    columns:
+      - name: vendor_id
+        tests: [unique, not_null]
+
+  - name: rate_code_lookup
+    description: RatecodeID to description, from the TLC data dictionary.
+    config:
+      column_types:
+        rate_code_id: bigint
+    columns:
+      - name: rate_code_id
+        tests: [unique, not_null]
+
+  - name: payment_type_lookup
+    description: Payment type code to description, from the TLC data dictionary.
+    config:
+      column_types:
+        payment_type: bigint
+    columns:
+      - name: payment_type
+        tests: [unique, not_null]
+
+  - name: trip_type_lookup
+    description: Trip type code to description. Green taxi only.
+    config:
+      column_types:
+        trip_type: bigint
+    columns:
+      - name: trip_type
+        tests: [unique, not_null]

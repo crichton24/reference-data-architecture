@@ -2,23 +2,76 @@ name: nyc_transit
 version: 1.0.0
 config-version: 2
 
+# Which profile in profiles.yml to use. Must match the top-level key there —
+# a mismatch gives "Could not find profile named ...", which reads like a
+# missing file but is really a name typo.
 profile: nyc_transit
+
+# Fail fast if someone opens this project with an incompatible dbt. Cheaper
+# than debugging a syntax error that's really a version difference.
+require-dbt-version: [">=1.10.0", "<2.0.0"]
 
 model-paths: ["models"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
 
-target-path: "target"
+# NOTE: target-path was removed from here in dbt 1.8. It now lives under
+# flags, or DBT_TARGET_PATH. Leaving it at the top level produces a
+# deprecation warning in 1.10 and will break later.
 clean-targets: ["target", "dbt_packages"]
+
+flags:
+  # Opt in to current behavior rather than legacy compatibility shims. These
+  # become the default in dbt 2.0, so turning them on now means the upgrade
+  # is uneventful.
+  require_explicit_package_overrides_for_builtin_materializations: true
+  source_freshness_run_project_hooks: true
 
 models:
   nyc_transit:
     staging:
       +materialized: view
       +schema: staging
+
     intermediate:
-      +materialized: ephemeral
+      # DELIBERATELY view, not ephemeral.
+      #
+      # Ephemeral is the usual choice for intermediate models — dbt inlines
+      # them as CTEs and creates no database object. But SNAPSHOTS CANNOT
+      # SELECT FROM EPHEMERAL MODELS: a snapshot needs a real relation to
+      # query, and dbt fails with "not a valid ref" if it finds a CTE.
+      #
+      # dim_vendor_snapshot reads int_vendors_observed, so it must be a
+      # view (or table). If you add intermediate models that nothing
+      # snapshots, override them individually with
+      # {{ config(materialized='ephemeral') }}.
+      +materialized: view
+      +schema: intermediate
+
     marts:
       +materialized: table
       +schema: marts
+
+seeds:
+  nyc_transit:
+    +schema: seeds
+    # Seeds are small reference data. Quoting off keeps column names
+    # lowercase and unquoted in Databricks, matching the models that join
+    # to them.
+    +quote_columns: false
+
+snapshots:
+  nyc_transit:
+    # Absolute, unlike the +schema values above which get concatenated onto
+    # the profile's base schema. Snapshots hold history that can't be
+    # rebuilt, so they're pinned to one place rather than following the
+    # dev/prod target around.
+    +target_schema: snapshots
+
+# Reminder on schema naming: dbt CONCATENATES these +schema values onto the
+# schema in profiles.yml. With schema: dev you get dev_staging, dev_marts,
+# dev_seeds — not staging, marts, seeds. That's what lets dev and prod share
+# a catalog safely, and it's the most common "where did my tables go?"
+# question from people new to dbt.

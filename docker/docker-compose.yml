@@ -24,6 +24,7 @@
 x-airflow-common: &airflow-common
   build:
     context: ../airflow
+  env_file: ../.env 
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
@@ -48,11 +49,19 @@ x-airflow-common: &airflow-common
     #   docker compose exec airflow-scheduler airflow connections get aws_default
     AIRFLOW_CONN_AWS_S3_NYC_TLC: '{"conn_type":"aws","login":"${AWS_ACCESS_KEY_ID}","password":"${AWS_SECRET_ACCESS_KEY}","extra":{"region_name":"${AWS_DEFAULT_REGION}"}}'
     AIRFLOW_CONN_DATABRICKS_DEFAULT: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}' #full access since it's a personal token, not a service principal.  We're on a free account
+    
+    #new for adding dbt to airflow container.  dbt needs to know where its profiles.yml is, and the databricks connection info is in there.
+    DBT_PROFILES_DIR: /dbt
+    DATABRICKS_HTTP_PATH: ${DATABRICKS_HTTP_PATH}
+    DBT_CATALOG: ${DBT_CATALOG:-raw}
+    DBT_SCHEMA: ${DBT_SCHEMA:-dev}
+    DBT_TARGET: ${DBT_TARGET:-dev}
   volumes:
     # Only the dags subdirectory is mounted, not the repo root. This is the
     # monorepo accommodation described in ADR 0002.
     - ../airflow/dags:/opt/airflow/dags
     - ../airflow/plugins:/opt/airflow/plugins
+    - ../dbt:/dbt                      # <-- add this
     - airflow-logs:/opt/airflow/logs
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
@@ -138,13 +147,26 @@ services:
 
   # Not long-running. Invoke on demand:
   #   docker compose -f docker/docker-compose.yml run --rm dbt run
+
   dbt:
     build:
       context: ../dbt
+    working_dir: /dbt
     env_file: ../.env
+    environment:
+      DBT_PROFILES_DIR: /dbt
+      DATABRICKS_HOST: ${DATABRICKS_HOST}
+      DATABRICKS_HTTP_PATH: ${DATABRICKS_HTTP_PATH}
+      DATABRICKS_TOKEN: ${DATABRICKS_TOKEN}
+      DBT_CATALOG: ${DBT_CATALOG:-raw}
+      DBT_SCHEMA: ${DBT_SCHEMA:-dev}
+      DBT_TARGET: ${DBT_TARGET:-dev}
     volumes:
       - ../dbt:/dbt
-    profiles: ["tools"]
+    ports:
+      - "8081:8080"          # dbt docs serve
+    profiles: ["tools"]       # not started by `up`; invoked on demand
+
 
 volumes:
   postgres-data:
