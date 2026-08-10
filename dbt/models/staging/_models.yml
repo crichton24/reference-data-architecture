@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: stg_yellow_trips
-    description: Yellow taxi trips, renamed and typed. One row per trip.
+    description: Yellow taxi trips, renamed and typed. One row per trip. 
     columns:
       - name: trip_key
         description: Surrogate key. Not tested for uniqueness — see nyc_trips.

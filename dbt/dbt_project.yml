@@ -31,10 +31,20 @@ flags:
 
 models:
   nyc_transit:
+    +databricks_tags:
+      informationClassification: PUBLIC
+      complianceClassification: NONE
+      dataDurationClassification: PERMENANT
+      updateType: AUTOMATIC
+      legalHold: 'NO'
+      dataSource: NYC TAXI AND LIMOUSINE COMMISSION
+      dataOwner: KTF1234
+      dataPrimacy: REPLICA
+      handlerApplications: AIRFLOW,DBT
     staging:
+      +database: staging
+      +schema: nyc_transportation
       +materialized: view
-      +schema: staging
-
     intermediate:
       # DELIBERATELY view, not ephemeral.
       #
@@ -47,28 +57,26 @@ models:
       # view (or table). If you add intermediate models that nothing
       # snapshots, override them individually with
       # {{ config(materialized='ephemeral') }}.
+      +database: staging
+      +schema: nyc_transportation
       +materialized: view
-      +schema: intermediate
 
-    marts:
+    formal:
+      +database: formal
       +materialized: table
-      +schema: marts
 
 seeds:
   nyc_transit:
-    +schema: seeds
-    # Seeds are small reference data. Quoting off keeps column names
-    # lowercase and unquoted in Databricks, matching the models that join
-    # to them.
+    +database: raw
+    +schema: nyc_tlc
     +quote_columns: false
+    +databricks_tags:
+      updateType: SEMI-AUTOMATIC
 
 snapshots:
   nyc_transit:
-    # Absolute, unlike the +schema values above which get concatenated onto
-    # the profile's base schema. Snapshots hold history that can't be
-    # rebuilt, so they're pinned to one place rather than following the
-    # dev/prod target around.
-    +target_schema: snapshots
+    +target_database: formal
+    +target_schema: customer
 
 # Reminder on schema naming: dbt CONCATENATES these +schema values onto the
 # schema in profiles.yml. With schema: dev you get dev_staging, dev_marts,

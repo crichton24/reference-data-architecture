@@ -12,11 +12,7 @@ ALTER SCHEMA nyc_tlc SET TAGS (
     'legalHold' = 'NO',
     'dataPrimacy' = 'REPLICA'
 );
-/*
---GENERATED ... NOT NEEDED
-create schema if not exists nyc_transit.staging
-    comment 'dbt staging views. Renamed and typed, still one row per source row.';
 
-create schema if not exists nyc_transit.marts
-    comment 'Dimensional models. The only layer consumers should query.';
-*/
+use catalog staging;
+create schema if not exists nyc_transportation
+    comment 'Staging schema for NYC transportation data before going to formal.';

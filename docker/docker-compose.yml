@@ -55,7 +55,6 @@ x-airflow-common: &airflow-common
     DATABRICKS_HTTP_PATH: ${DATABRICKS_HTTP_PATH}
     DBT_CATALOG: ${DBT_CATALOG:-raw}
     DBT_SCHEMA: ${DBT_SCHEMA:-dev}
-    DBT_TARGET: ${DBT_TARGET:-dev}
   volumes:
     # Only the dags subdirectory is mounted, not the repo root. This is the
     # monorepo accommodation described in ADR 0002.
@@ -160,7 +159,6 @@ services:
       DATABRICKS_TOKEN: ${DATABRICKS_TOKEN}
       DBT_CATALOG: ${DBT_CATALOG:-raw}
       DBT_SCHEMA: ${DBT_SCHEMA:-dev}
-      DBT_TARGET: ${DBT_TARGET:-dev}
     volumes:
       - ../dbt:/dbt
     ports:
