@@ -41,8 +41,8 @@ models:
       dataOwner: KTF1234
       dataPrimacy: REPLICA
       handlerApplications: AIRFLOW,DBT
-    staging:
-      +database: staging
+    transform:
+      +database: transform
       +schema: nyc_transportation
       +materialized: view
     intermediate:
@@ -57,7 +57,7 @@ models:
       # view (or table). If you add intermediate models that nothing
       # snapshots, override them individually with
       # {{ config(materialized='ephemeral') }}.
-      +database: staging
+      +database: transform
       +schema: nyc_transportation
       +materialized: view
 

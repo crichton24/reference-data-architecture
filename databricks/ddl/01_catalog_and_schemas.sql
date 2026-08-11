@@ -13,6 +13,6 @@ ALTER SCHEMA nyc_tlc SET TAGS (
     'dataPrimacy' = 'REPLICA'
 );
 
-use catalog staging;
+use catalog transform;
 create schema if not exists nyc_transportation
     comment 'Staging schema for NYC transportation data before going to formal.';
