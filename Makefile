@@ -3,10 +3,10 @@
 up:            ## start the local stack
 	docker compose --env-file .env -f docker/docker-compose.yml up -d
 
-down:          ## stop it and remove volumes
-	docker compose --env-file .env -f docker/docker-compose.yml down -v
-			   ## stop it and keep volumes (retains history in airflow)
+down:          ## stop it and keep volumes
 	docker compose --env-file .env -f docker/docker-compose.yml down
+force-recreate:
+	docker compose --env-file .env -f docker/docker-compose.yml up -d --force-recreate
 
 logs:
 	docker compose -f docker/docker-compose.yml logs -f
@@ -25,4 +25,4 @@ lint:
 
 fmt:
 	ruff format airflow/
-	sqlfluff fix dbt/models
+	sqlfluff fix dbt/models$D

@@ -41,6 +41,7 @@ models:
       dataOwner: KTF1234
       dataPrimacy: REPLICA
       handlerApplications: AIRFLOW,DBT
+      sla:  QUARTERLY
     transform:
       +database: transform
       +schema: nyc_transportation

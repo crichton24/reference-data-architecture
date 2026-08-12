@@ -62,6 +62,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.dbt == 'true'
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -70,15 +73,12 @@ jobs:
           cache: pip
       - name: Install
         run: pip install dbt-databricks sqlfluff sqlfluff-templater-dbt
+      - name: Install dbt packages
+        run: dbt deps
       - name: Lint SQL
-        run: sqlfluff lint dbt/models --disable-progress-bar
+        run: sqlfluff lint models --disable-progress-bar
       - name: Parse project
-        # `dbt parse` compiles the DAG without connecting to a warehouse, so
-        # this needs no secrets. ci/profiles.yml holds dummy credentials.
-        run: |
-          cd dbt
-          dbt deps
-          dbt parse --profiles-dir ../ci
+        run: dbt parse --profiles-dir ../ci
 
   databricks:
     needs: changes

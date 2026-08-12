@@ -3,7 +3,7 @@
         materialized='incremental',
         unique_key='trip_key',
         incremental_strategy='merge',
-        on_schema_change='append_new_columns',
+        on_schema_change='fail',
         database='formal',
         schema='customer',
         tblproperties={'delta.feature.allowColumnDefaults': 'supported'}
