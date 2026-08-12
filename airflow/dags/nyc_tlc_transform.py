@@ -1,154 +1,139 @@
 """
 NYC TLC transformations — dbt.
 
-Runs the dbt project after bronze is refreshed.
+Runs the dbt project after raw is refreshed.
 
 SCHEDULING
-    No cron. This DAG runs on BRONZE_ASSET, emitted by nyc_tlc_load_bronze's
-    publish_bronze task. Bronze only changes when TLC publishes, so a time
-    schedule would mean ~29 no-op runs a month.
+    No cron. Triggered by the raw assets emitted by nyc_tlc_load_raw.
+    A list means AND — both yellow and green must have refreshed since this
+    DAG last ran. Use (RAW_YELLOW | RAW_GREEN) for OR semantics if you
+    would rather transform whenever either table updates.
 
-    The chain end to end:
-        nyc_tlc_ingest  --LANDING_ASSET-->  nyc_tlc_load_bronze
-                                                    |
-                                              BRONZE_ASSET
-                                                    |
-                                                 THIS DAG
-                                                    |
-                                              MARTS_ASSET  (for BI, MCP, etc.)
+    Full chain:
+        nyc_tlc_ingest  --LANDING-->  nyc_tlc_load_raw
+                                              |
+                                          RAW_ALL_ASSETS
+                                              |
+                                          THIS DAG
+                                              |
+                                          FORMAL_ALL   (BI, MCP, exports)
 
 WHY THE STEPS ARE SPLIT
-    dbt can do all of this with a single `dbt build`, and once the snapshot
-    table exists that would work. It is split here because SNAPSHOTS ARE NOT
-    PART OF THE MODEL DAG — dbt will not order int_vendors_observed ->
-    snapshot -> dim_vendor for you. The dependency is real but invisible to
-    dbt, so Airflow enforces it.
+    `dbt build` would run all of this in one command, and once the snapshot
+    table exists that mostly works. It is split because SNAPSHOTS ARE NOT PART
+    OF THE MODEL DAG — dbt will not order int_vendors_observed -> snapshot ->
+    dim_vendor for you. That dependency is real but invisible to dbt, so
+    Airflow enforces it.
 
-    Splitting also means a failure tells you WHICH layer broke, and a retry
-    resumes from there instead of rerunning everything.
+    Splitting also means a failure names the layer that broke, and a retry
+    resumes there instead of re-running everything.
 
 WHY EVERY STEP RUNS EVERY TIME
-    A reasonable instinct is "seed once, then only run models." Resist it:
-
-    - Seeds are four tiny CSVs. Re-seeding is seconds and guarantees the
-      warehouse matches the repo. Skipping it means a seed edit silently
-      never reaches Databricks.
+    - Seeds are four small CSVs. Re-seeding guarantees the warehouse matches
+      the repo; skipping it means a seed edit silently never deploys.
     - The snapshot MUST run on every refresh. It captures state that cannot
-      be reconstructed later — a vendor rename that happens between runs is
-      lost forever if the snapshot didn't run. This is the one thing in dbt
-      that is not reproducible from source.
+      be reconstructed — a vendor rename occurring between two runs is lost
+      permanently if the snapshot did not run in between. It is the only
+      object in dbt that is not reproducible from source.
     - Models are incremental, so a run processes only new periods anyway.
 
-    The genuinely one-time work is the FIRST build. See the notes at the
-    bottom.
+    The genuinely one-time work is the first build. See notes at the bottom.
 """
 
 from __future__ import annotations
 
+#use assets.py for shared asset definitions
+from assets import LANDING_ASSET, RAW_ALL_ASSETS, ZONE_LOOKUP_ASSET, FORMAL_ALL_ASSETS
+
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.sdk import Asset, dag
-from airflow.utils.task_group import TaskGroup
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import dag
+from airflow.sdk import TaskGroup
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
-
-# Must be byte-identical to the outlet in nyc_tlc_load_bronze.py.
-BRONZE_ASSET = Asset("nyc-transit://bronze/trips")
-
-# Emitted when marts are rebuilt. Downstream consumers — a BI refresh, an
-# MCP server cache warm — can schedule on this.
-MARTS_ASSET = Asset("nyc-transit://marts/nyc_trips")
-
+# dbt lives in its own virtualenv so its dependency tree cannot collide with
+# Airflow's. It is deliberately NOT on PATH — the absolute path is the point.
 DBT_BIN = "/home/airflow/dbt-venv/bin/dbt"
 DBT_DIR = "/dbt"
 
-# --no-write-json keeps run artifacts out of the mounted project directory,
-# which would otherwise fill with files owned by the Airflow container's uid
-# and confuse local dbt runs. Drop it if you want to collect run_results.json.
+# --no-use-colors keeps ANSI escapes out of the Airflow task logs.
 DBT_FLAGS = "--no-use-colors"
 
 
 def dbt_task(task_id: str, command: str, **kwargs) -> BashOperator:
-    """Build a BashOperator that invokes dbt.
+    """BashOperator that invokes dbt from the project directory.
 
     `cd` first because dbt resolves dbt_project.yml relative to the working
-    directory. The absolute path to the venv binary is deliberate — dbt is
-    intentionally not on PATH, so nothing can accidentally pick it up in a
-    context where its dependencies would conflict with Airflow's.
+    directory. `set -e` so a non-zero dbt exit fails the task rather than
+    being swallowed by the shell.
     """
     return BashOperator(
         task_id=task_id,
-        bash_command=f"cd {DBT_DIR} && {DBT_BIN} {DBT_FLAGS} {command}",
+        bash_command=f"set -e; cd {DBT_DIR} && {DBT_BIN} {DBT_FLAGS} {command}",
         **kwargs,
     )
 
 
 @dag(
     dag_id="nyc_tlc_transform",
-    schedule=[BRONZE_ASSET],
+    schedule=RAW_ALL_ASSETS,
     start_date=pendulum.datetime(2026, 1, 1, tz="America/New_York"),
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 1, "retry_delay": pendulum.duration(minutes=5)},
-    tags=["nyc-transit", "dbt", "transform"],
+    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "TRANSFORM","PUBLIC","DATABRICKS","NYC TRANSIT"],
     doc_md=__doc__,
 )
 def nyc_tlc_transform():
 
-    # `dbt deps` installs packages listed in packages.yml (dbt_utils, which
-    # the surrogate key macro depends on). Fast and idempotent when packages
-    # are already present, so it's cheap insurance against a stale image.
+    # Installs dbt_utils from packages.yml. Fast and idempotent when already
+    # present — cheap insurance against a stale image.
     deps = dbt_task("dbt_deps", "deps")
 
-    # Loads the four lookup CSVs. --full-refresh because seeds are small and
-    # a truncate-and-reload is the only way to remove a deleted row; without
-    # it, dbt appends and a removed lookup value lingers.
+    # --full-refresh on seeds: they are small, and a truncate-and-reload is
+    # the only way a DELETED lookup row actually disappears. Without it dbt
+    # appends and a removed value lingers indefinitely.
     seed = dbt_task("dbt_seed", "seed --full-refresh")
 
     with TaskGroup("staging") as staging:
-        # Views over bronze. Cheap — no data is materialized, so this is
-        # really just validating that the SQL compiles against the current
-        # bronze schema.
+        # Views over raw. Nothing is materialized, so this is really
+        # validating that the SQL still compiles against the current raw
+        # schema — a cheap early warning when TLC changes a column.
         dbt_task("dbt_run_staging", "run --select staging")
 
     with TaskGroup("dimensions") as dimensions:
-        # Order here is the whole reason this DAG isn't one `dbt build`.
+        # This ordering is the entire reason this DAG is not one dbt build.
         observed = dbt_task(
             "dbt_run_int_vendors", "run --select int_vendors_observed"
         )
-        # Captures SCD2 history. New vendor IDs are inserted; changed names
-        # expire the prior row. This is the state-capturing step.
         snapshot = dbt_task("dbt_snapshot", "snapshot")
-        # Reads the snapshot and presents validity windows.
         dim = dbt_task("dbt_run_dim_vendor", "run --select dim_vendor")
 
         observed >> snapshot >> dim
 
-    with TaskGroup("marts") as marts:
-        # Incremental merge. Processes only new periods.
-        dbt_task("dbt_run_marts", "run --select nyc_trips")
+    with TaskGroup("formal") as formal:
+        # Incremental merge — processes only new periods. Contracts are
+        # enforced on this model, so a schema drift fails here rather than
+        # reaching the formal catalog.
+        dbt_task("dbt_run_nyc_trips", "run --select nyc_trips")
 
-    # Tests run after everything is built rather than interleaved, so a
-    # failing test doesn't block a downstream model that might have been
-    # fine. The tradeoff is that bad data reaches marts before the test
-    # catches it — acceptable in bronze/silver, worth revisiting if marts
-    # ever feed something customer-facing.
+    # Tests run after the build rather than interleaved, so one failing test
+    # doesn't block a model that would have succeeded. Tradeoff: bad data
+    # reaches formal before the test catches it. Acceptable while nothing
+    # customer-facing consumes it; revisit if that changes.
     #
-    # --store-failures writes failing rows to a table so you can inspect
-    # them rather than just seeing a count.
+    # --store-failures writes failing rows to a table so they can be
+    # inspected rather than just counted.
     test = dbt_task("dbt_test", "test --store-failures")
 
-    # Emits MARTS_ASSET. Only fires on success, so a failed transform doesn't
-    # tell downstream consumers there's fresh data.
-    publish = BashOperator(
-        task_id="publish_marts",
-        bash_command="echo 'marts refreshed'",
-        outlets=[MARTS_ASSET],
-    )
+    # Emits the formal assets. Only fires on success, so a failed transform
+    # never tells downstream consumers there is fresh data.
+    publish = EmptyOperator(task_id="publish_formal", outlets=FORMAL_ALL_ASSETS)
 
-    deps >> seed >> staging >> dimensions >> marts >> test >> publish
+    deps >> seed >> staging >> dimensions >> formal >> test >> publish
 
 
 nyc_tlc_transform()
@@ -157,49 +142,20 @@ nyc_tlc_transform()
 # ===========================================================================
 # FIRST RUN  (reference only)
 # ===========================================================================
+# Run once by hand from the dbt container before enabling this DAG. Doing it
+# step by step surfaces contract and type mismatches one at a time instead of
+# buried in a task log.
 #
-# Run these by hand once, from the dbt container, before enabling the DAG.
-# They establish the snapshot baseline and confirm each layer independently:
+#   D="docker compose --env-file .env -f docker/docker-compose.yml run --rm dbt"
+#   $D deps
+#   $D seed --full-refresh
+#   $D run --select staging
+#   $D run --select int_vendors_observed
+#   $D snapshot                              # creates the SCD2 table
+#   $D run --select dim_vendor
+#   $D run --select nyc_trips --full-refresh
+#   $D test
 #
-#   docker compose run --rm dbt deps
-#   docker compose run --rm dbt seed
-#   docker compose run --rm dbt run --select staging
-#   docker compose run --rm dbt run --select int_vendors_observed
-#   docker compose run --rm dbt snapshot          # creates the SCD2 table
-#   docker compose run --rm dbt run --select dim_vendor
-#   docker compose run --rm dbt run --select nyc_trips --full-refresh
-#   docker compose run --rm dbt test
-#
-# Note --full-refresh on the first nyc_trips build. An incremental model's
-# first run creates the table from the full source anyway, but being explicit
-# avoids ambiguity if a partial table already exists from a failed attempt.
-#
-# After that, the DAG above handles every subsequent refresh and no step is
-# one-time. --full-refresh should NOT be in the DAG: it would rebuild every
-# period on every run, which is exactly what incremental materialization
-# exists to avoid.
-#
-# ===========================================================================
-# UPGRADING TO COSMOS  (when model-level visibility is worth the setup)
-# ===========================================================================
-#
-# astronomer-cosmos parses target/manifest.json and generates one Airflow
-# task per dbt model, so the Airflow graph mirrors dbt lineage exactly. That
-# gives per-model retries and makes "which model failed" visible without
-# opening logs.
-#
-#   from cosmos import DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig
-#
-#   transform = DbtTaskGroup(
-#       project_config=ProjectConfig("/dbt"),
-#       profile_config=ProfileConfig(
-#           profile_name="nyc_transit",
-#           target_name="dev",
-#           profiles_yml_filepath="/dbt/profiles.yml",
-#       ),
-#       execution_config=ExecutionConfig(dbt_executable_path=DBT_BIN),
-#   )
-#
-# The snapshot ordering problem does NOT go away — Cosmos reads the same
-# manifest dbt does, and the snapshot is still outside the model DAG. It
-# would still need explicit sequencing.
+# --full-refresh belongs on that first nyc_trips build only. It must NOT be
+# in the DAG — it would rebuild every period on every run, defeating the
+# incremental materialization entirely.

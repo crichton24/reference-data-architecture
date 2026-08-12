@@ -46,6 +46,9 @@ WORKER IMAGE NEEDS
 # Python versions. Harmless to always include.
 from __future__ import annotations
 
+#use assets.py for shared asset definitions
+from assets import LANDING_ASSET, RAW_ALL_ASSETS
+
 # Standard library — ships with Python, nothing to install.
 import hashlib      # cryptographic hashes; used here to fingerprint a schema
 import json         # convert between Python dicts and JSON text
@@ -56,17 +59,10 @@ from pathlib import Path  # object-oriented file paths
 # Third-party — installed via pip.
 import pendulum     # datetime library Airflow uses; nicer than stdlib datetime
 import requests     # the standard way to make HTTP calls in Python
-from airflow.decorators import dag, task
-from airflow.exceptions import AirflowSkipException
+from airflow.sdk import dag, task
+from airflow.sdk.exceptions import AirflowSkipException
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-# Airflow renamed Dataset -> Asset in version 3. This try/except keeps the DAG
-# working on either. The pattern is worth knowing: attempt the modern import,
-# fall back to the older one, alias both to the same local name.
-try:
-    from airflow.sdk import Asset          # Airflow 3.x
-except ImportError:                        # pragma: no cover
-    from airflow.datasets import Dataset as Asset  # Airflow 2.4+
 
 # A logger named after this module. Anything you log here shows up in the
 # Airflow UI under the task's Logs tab. Use this instead of print() — print
@@ -105,7 +101,7 @@ MANIFEST_KEY = f"{LANDING_PREFIX}/_manifest.json"
 
 # The name of an Airflow Connection you set up in the UI (Admin > Connections).
 # Credentials live there, encrypted — never hardcoded in a DAG file.
-AWS_CONN_ID = "aws_s3_nyc_tlc"
+AWS_CONN_ID = "aws_default"
 
 REQUEST_TIMEOUT = 60  # seconds; always set one, or a hung server hangs your task
 
@@ -114,7 +110,9 @@ REQUEST_TIMEOUT = 60  # seconds; always set one, or a hung server hangs your tas
 # the producer and every consumer spell it IDENTICALLY, character for
 # character. A trailing slash mismatch is the classic reason a consumer DAG
 # never fires.
-LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
+
+## now using assets.py for shared asset definitions
+#LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
 
 
 def _s3() -> S3Hook:
@@ -168,7 +166,7 @@ def _s3() -> S3Hook:
     # Network calls fail transiently; retries turn a 3 AM page into a non-event.
     default_args={"retries": 3, "retry_delay": pendulum.duration(minutes=10)},
 
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","SOURCE_TO_S3"],  # UI filter labels
+    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","SOURCE_TO_S3", "NYC TRANSIT"],  # UI filter labels
     doc_md=__doc__,  # __doc__ is the triple-quoted string at the top of this
                      # file; this renders it into the UI as documentation
 )
@@ -408,7 +406,7 @@ def nyc_tlc_ingest():
                         fh.write(chunk)
 
             # Did we get the whole thing? A truncated download otherwise looks
-            # like success and silently corrupts your bronze layer.
+            # like success and silently corrupts your raw layer.
             size = local.stat().st_size
             if target["content_length"] and size != target["content_length"]:
                 raise ValueError(

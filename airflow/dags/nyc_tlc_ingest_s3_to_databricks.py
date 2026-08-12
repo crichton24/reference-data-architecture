@@ -1,5 +1,5 @@
 """
-NYC TLC bronze loader — yellow and green.
+NYC TLC raw loader — yellow and green.
 
 Loads Parquet from the S3 landing zone into raw.nyc_tlc.yellow_trips and
 raw.nyc_tlc.green_trips.
@@ -41,16 +41,15 @@ from __future__ import annotations
 
 import logging
 
+import os #for environment variables specifically sql warehouse path
+
+from assets import LANDING_ASSET, RAW_ALL_ASSETS
+
 import pendulum
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 
-# Airflow renamed Dataset -> Asset in 3.x. Same shim as the ingest DAG.
-try:
-    from airflow.sdk import Asset          # Airflow 3.x
-except ImportError:                        # pragma: no cover
-    from airflow.datasets import Dataset as Asset  # Airflow 2.4+
 
 log = logging.getLogger(__name__)
 
@@ -59,11 +58,13 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Must match nyc_tlc_ingest.py exactly — both the bucket and the prefix.
-BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
-LANDING_PREFIX = "nyc-tlc"
+## NOW INGESTED FROM assets.py
+#BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
+#LANDING_PREFIX = "nyc-tlc"
 
 # The trigger. Identical string to the producer's outlet, or this never fires.
-LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
+## NOW INGESTED FROM assets.py
+#LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
 
 # THE SINGLE SOURCE OF TRUTH. One entry per table. Everything downstream —
 # task count, source paths, verification — derives from this dict, so adding
@@ -75,21 +76,23 @@ TABLES = {
 }
 
 # What this DAG produces, so a dbt DAG can schedule on it later.
-# BRONZE_ASSETS = [
+# RAW_ALL_ASSETS = [
 #     Asset(f"databricks://raw/nyc_tlc/{table.split('.')[-1]}")
 #     for table in TABLES.values()
 # ]
 
-BRONZE_ASSETS = [
-    Asset("nyc-tlc://bronze/yellow"),
-    Asset("nyc-tlc://bronze/green"),
-]
+## NOW INGESTED FROM assets.py
+# RAW_ASSETS = [
+#     Asset("nyc-tlc://raw/yellow"),
+#     Asset("nyc-tlc://raw/green"),
+# ]
 
 
 DATABRICKS_CONN_ID = "databricks_default"
 
 # SQL warehouse > Connection details tab. Looks like /sql/1.0/warehouses/abc123.
-SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/8bf3f67b02373090"
+#SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/8bf3f67b02373090"
+SQL_WAREHOUSE_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
 
 # Set False if the target tables have only TLC's own columns. Quickest way to
 # get a first load working against tables you don't want to alter yet.
@@ -118,7 +121,7 @@ def _sql_hook() -> DatabricksSqlHook:
     tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","S3_TO_DATABRICKS"],  # UI filter labels
     doc_md=__doc__,
 )
-def nyc_tlc_load_bronze():
+def nyc_tlc_load_raw():
 
     # -----------------------------------------------------------------------
     # TASK 1: expand the config into work items
@@ -162,7 +165,7 @@ def nyc_tlc_load_bronze():
             # Wrapping the path in a SELECT lets us add lineage columns.
             # _metadata is a hidden column Databricks exposes on any file-based
             # read, carrying the source file's path and modification time.
-            # Landing that in bronze means any row traces back to its file.
+            # Landing that in raw means any row traces back to its file.
             source_expr = f"""(
               SELECT
                 *,
@@ -240,10 +243,10 @@ def nyc_tlc_load_bronze():
         return {"table": table, "periods": len(rows)}
 
     # -----------------------------------------------------------------------
-    # TASK 4: announce bronze is ready
+    # TASK 4: announce raw is ready
     # -----------------------------------------------------------------------
     # This one is NOT mapped — it's a single task consuming all the mapped
-    # results, because the asset represents "bronze was refreshed" rather than
+    # results, because the asset represents "raw was refreshed" rather than
     # any individual table.
     #
     # trigger_rule matters for independence. The default (all_success) would
@@ -254,10 +257,10 @@ def nyc_tlc_load_bronze():
     # If you'd rather emit the asset whenever ANY table succeeds — letting dbt
     # proceed on partial data while green is broken — use "one_success"
     # instead. That's a real tradeoff: faster downstream, but marts may be
-    # built from an incomplete bronze.
-    @task(outlets=BRONZE_ASSETS, trigger_rule="none_failed_min_one_success")
-    def publish_bronze(reports: list[dict]) -> None:
-        log.info("Bronze refreshed: %s", reports)
+    # built from an incomplete raw.
+    @task(outlets=RAW_ALL_ASSETS, trigger_rule="none_failed_min_one_success")
+    def publish_raw(reports: list[dict]) -> None:
+        log.info("Raw refreshed: %s", reports)
 
     # -----------------------------------------------------------------------
     # WIRING  (runs at parse time — builds the graph, executes no SQL)
@@ -267,10 +270,10 @@ def nyc_tlc_load_bronze():
     # verify as entirely separate task instances.
     loaded = copy_into.expand(target=load_targets())
     verified = verify.expand(loaded=loaded)
-    publish_bronze(reports=verified)
+    publish_raw(reports=verified)
 
 
-nyc_tlc_load_bronze()
+nyc_tlc_load_raw()
 
 
 # ===========================================================================
@@ -323,4 +326,4 @@ nyc_tlc_load_bronze()
 # --- RUNNING ONE TABLE IN ISOLATION -------------------------------------
 # Mapped instances are addressable by index, in TABLES order (yellow=0):
 #
-#   airflow tasks test nyc_tlc_load_bronze copy_into 2026-08-01 --map-index 0
+#   airflow tasks test nyc_tlc_load_raw copy_into 2026-08-01 --map-index 0
