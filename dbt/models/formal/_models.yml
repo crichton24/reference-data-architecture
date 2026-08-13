@@ -1,81 +1,395 @@
 version: 2
 
+# ===========================================================================
+# NOTES
+#
+# NO `versions:` BLOCK — DELIBERATE
+#   dbt only appends the _v1 / _v2 alias suffix to models that declare a
+#   `versions:` list. Without one, relations keep their plain names:
+#   formal.customer.nyc_trips and formal.common.dim_vendor.
+#
+#   Version is tracked via the datasetVersion tag instead. If a MAJOR release
+#   ever needs two live versions, add `versions:` at that point and set an
+#   explicit alias on the latest so the unsuffixed name survives.
+#
+# TAGS ARE REPEATED IN FULL ON EACH MODEL — DELIBERATE
+#   On dbt-databricks 1.10, model-level databricks_tags REPLACE any set in
+#   dbt_project.yml rather than merging with them. Declaring a partial set
+#   here would silently drop the project-level governance tags. Additive
+#   merging arrives in 1.12; this file can be thinned out then.
+#
+# CONTRACTS
+#   contract.enforced requires every column and its data_type to be declared.
+#   A model producing a column not listed here — or a type that doesn't match
+#   — fails at build time rather than reaching the formal catalog. That
+#   enforcement is the point: it makes the release control standard
+#   mechanical instead of aspirational.
+#
+#   Materialization, database, schema, and tblproperties stay in each model's
+#   own config() block. Only the contract and governance metadata live here.
+# ===========================================================================
+
+
 models:
+
+  # =========================================================================
+  # formal.common.dim_vendor
+  # =========================================================================
   - name: dim_vendor
     description: >
-      Vendor dimension with SCD Type 2 validity windows, sourced from the
+      Vendor dimension with SCD Type 2 validity windows, sourced from
       dim_vendor_snapshot. New vendor IDs are added automatically on each
-      snapshot run; name changes expire the prior row rather than overwriting.
+      snapshot run; a name change expires the prior row and inserts a new
+      one rather than overwriting history.
+
+      Grain: one row per vendor per version. vendor_id is NOT unique.
+
+    config:
+      contract:
+        enforced: true
+
+      databricks_tags:
+        # --- release control ---
+        datasetVersion: '1.0.0'
+        contractStatus: 'ACTIVE'
+
+        # --- operational ---
+        criticality: 'MODERATE'
+        recoverySla: '2_BUSINESS_DAYS'
+
+        # --- governance taxonomy ---
+        informationClassification: 'PUBLIC'
+        complianceClassification: 'NONE'
+        dataDurationClassification: 'PERMANENT'
+        updateType: 'AUTOMATIC'
+        legalHold: 'NO'
+        dataSource: 'NYC TAXI AND LIMOUSINE COMMISSION'
+        dataOwner: 'KTF1234'
+        dataPrimacy: 'REPLICA'
+        handlerApplications: 'AIRFLOW,DBT'
+
     columns:
       - name: vendor_key
-        description: Surrogate key. Unique per version, not per vendor.
-        tests: [unique, not_null]
-      - name: vendor_id
-        description: TLC's natural key. NOT unique — one row per version.
-        tests: [not_null]
-      - name: vendor_name
-        tests: [not_null]
-      - name: is_unmapped
+        data_type: string
         description: >
-          True when the vendor_id was seen in trip data but is missing from
-          the vendor_lookup seed. A true here is an action item: update the
+          Surrogate key from the snapshot (dbt_scd_id). Unique per VERSION,
+          not per vendor.
+        constraints:
+          - type: not_null
+        databricks_tags:
+          data_classification: 'public'
+        data_tests: [unique, not_null]
+
+      - name: vendor_id
+        data_type: bigint
+        description: >
+          TLC's natural key. Not unique — one row per version of each vendor.
+        constraints:
+          - type: not_null
+        databricks_tags:
+          data_classification: 'public'
+        data_tests: [not_null]
+
+      - name: vendor_name
+        data_type: string
+        description: >
+          Vendor name from the vendor_lookup seed, or
+          'Unknown vendor (<id>)' when the ID is absent from the seed.
+        constraints:
+          - type: not_null
+        databricks_tags:
+          data_classification: 'public'
+        data_tests: [not_null]
+
+      - name: is_unmapped
+        data_type: boolean
+        description: >
+          True when the vendor_id appeared in trip data but is missing from
+          the vendor_lookup seed. A true value is an action item: update the
           seed from TLC's current data dictionary.
+        constraints:
+          - type: not_null
+
+      - name: valid_from
+        data_type: timestamp
+        description: When this version became current.
+        constraints:
+          - type: not_null
+
+      - name: valid_to
+        data_type: timestamp
+        description: >
+          When this version stopped being current. Open rows carry
+          9999-12-31 rather than NULL, so BETWEEN-style joins work without
+          special-casing NULL.
+        constraints:
+          - type: not_null
+
       - name: is_current
-        tests: [not_null]
+        data_type: boolean
+        description: True for the single open version of each vendor.
+        constraints:
+          - type: not_null
 
-    tests:
-      # Exactly one open version per vendor. Catches the classic SCD2 bug
-      # where an expire step fails and two rows both look current.
+    data_tests:
+      # Exactly one open version per vendor. Catches the classic SCD2 failure
+      # where an expire step doesn't run and two rows both look current.
       - dbt_utils.expression_is_true:
-          expression: >
-            (select count(*) from (
-               select vendor_id from {{ ref('dim_vendor') }}
-               where is_current group by vendor_id having count(*) > 1
-            )) = 0
+          arguments:
+            expression: >
+              (select count(*) from (
+                 select vendor_id from {{ ref('dim_vendor') }}
+                 where is_current group by vendor_id having count(*) > 1
+              )) = 0
 
+
+  # =========================================================================
+  # formal.customer.nyc_trips
+  # =========================================================================
   - name: nyc_trips
     description: >
       Unified yellow and green taxi trips with vendor, rate code, payment
-      type, and trip type descriptions resolved. One row per trip.
-      Timestamps carried as both true instants (pickup_at) and recorded
-      Eastern wall clock (pickup_at_local).
+      type, and trip type descriptions resolved.
+
+      Grain: one row per trip.
+
+      Timestamps are carried in both forms. pickup_at / dropoff_at are true
+      UTC instants, correct for duration and cross-day arithmetic.
+      pickup_at_local / dropoff_at_local are the Eastern wall-clock values
+      TLC recorded, correct for "trips between 5pm and 6pm" questions.
+
+    config:
+      contract:
+        enforced: true
+
+      databricks_tags:
+        # --- release control ---
+        datasetVersion: '1.0.0'
+        contractStatus: 'ACTIVE'
+
+        # --- operational ---
+        criticality: 'MODERATE'
+        recoverySla: '2_BUSINESS_DAYS'
+
+        # --- governance taxonomy ---
+        informationClassification: 'PUBLIC'
+        complianceClassification: 'NONE'
+        dataDurationClassification: 'PERMANENT'
+        updateType: 'AUTOMATIC'
+        legalHold: 'NO'
+        dataSource: 'NYC TAXI AND LIMOUSINE COMMISSION'
+        dataOwner: 'KTF1234'
+        dataPrimacy: 'REPLICA'
+        handlerApplications: 'AIRFLOW,DBT'
+
     columns:
+
+      # --- keys and classification -----------------------------------------
       - name: trip_key
+        data_type: string
         description: >
-          Surrogate key over the natural trip attributes. Tested for
-          uniqueness here rather than in staging, since the merge strategy
-          depends on it.
-        tests: [unique, not_null]
+          Surrogate key over the natural trip attributes. The merge strategy
+          depends on this being unique.
+        constraints:
+          - type: not_null
+        data_tests: [unique, not_null]
+
       - name: tlc_type
-        tests:
+        data_type: string
+        description: Service type. 'Yellow Taxi' or 'Green Taxi'.
+        constraints:
+          - type: not_null
+        data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: ['Yellow Taxi', 'Green Taxi']
+
+      # --- vendor -----------------------------------------------------------
+      - name: vendor_id
+        data_type: bigint
+        description: TLC vendor code.
+
       - name: vendor_name
-        tests: [not_null]
-#REMOVED -- can be null
-#      - name: rate_code_description
-#        tests: [not_null]
-#REMOVED -- can be null
-#      - name: payment_type_description
-#        tests: [not_null]
-      - name: pickup_at
-        tests: [not_null]
-      - name: trip_duration_minutes
+        data_type: string
         description: >
-          Computed from instants, so DST transitions don't distort it.
-          Negative values exist in TLC data (clock errors, voided trips) and
-          are deliberately not filtered — that's a marts-consumer decision.
-      - name: total_amount
+          Current vendor name from dim_vendor. Falls back to
+          'Unknown vendor (<id>)' rather than dropping the trip.
+        constraints:
+          - type: not_null
+        data_tests: [not_null]
+
+      # --- rate code --------------------------------------------------------
+      - name: rate_code_id
+        data_type: bigint
+        description: TLC rate code.
+
+      - name: rate_code_description
+        data_type: string
         description: >
-          Not tested for positivity. TLC data legitimately contains negative
-          totals for voided and refunded trips.
+          Rate code description. Falls back to
+          'Unknown rate code (<id>)' rather than dropping the trip.
+        constraints:
+          - type: not_null
+        data_tests: [not_null]
+
+      # --- payment ----------------------------------------------------------
+      - name: payment_type
+        data_type: bigint
+        description: TLC payment type code.
+
+      - name: payment_type_description
+        data_type: string
+        description: >
+          Payment type description. Falls back to
+          'Unknown payment type (<id>)' rather than dropping the trip.
+        constraints:
+          - type: not_null
+        data_tests: [not_null]
+
+      # --- trip type (green only) -------------------------------------------
+      - name: trip_type
+        data_type: bigint
+        description: >
+          Street-hail vs dispatch. NULL for yellow taxis — meaningful
+          absence, not missing data. Deliberately nullable.
+
+      - name: trip_type_description
+        data_type: string
+        description: >
+          Trip type description. NULL for yellow taxis, and NULL for any
+          unrecognized green code (not coalesced, unlike the other lookups).
+
+      # --- locations --------------------------------------------------------
       - name: pickup_location_id
-        tests:
+        data_type: bigint
+        description: >
+          TLC zone ID. Includes the sentinel values 264 and 265, which are
+          legitimate 'Unknown' and 'N/A' zones rather than errors.
+        data_tests:
           - relationships:
-              to: ref('stg_taxi_zone_lookup')
-              field: location_id
+              arguments:
+                to: ref('stg_taxi_zone_lookup')
+                field: location_id
               config:
                 severity: warn
                 error_if: ">100"
+
+      - name: dropoff_location_id
+        data_type: bigint
+        description: TLC zone ID. Same sentinel caveat as pickup.
+
+      # --- time -------------------------------------------------------------
+      - name: pickup_at
+        data_type: timestamp
+        description: >
+          True instant, converted from the recorded Eastern wall clock. Use
+          for duration and cross-day arithmetic.
+        data_tests: [not_null]
+
+      - name: dropoff_at
+        data_type: timestamp
+        description: True instant.
+
+      - name: pickup_at_local
+        data_type: timestamp_ntz
+        description: >
+          Eastern wall clock exactly as TLC recorded it. Use for local-time
+          questions. Ambiguous during the autumn DST transition — TLC's data
+          cannot distinguish the two 1:30 AM occurrences.
+
+      - name: dropoff_at_local
+        data_type: timestamp_ntz
+        description: Eastern wall clock as recorded.
+
+      - name: pickup_date
+        data_type: date
+        description: Local calendar date of pickup.
+
+      - name: pickup_hour
+        data_type: int
+        description: Local hour of pickup, 0-23.
+
+      - name: pickup_day_of_week
+        data_type: int
+        description: Local day of week, 1 = Sunday.
+
+      - name: trip_duration_minutes
+        data_type: double
+        description: >
+          Computed from instants, so DST transitions don't distort it.
+          Negative values exist in TLC data (clock errors, voided trips) and
+          are deliberately NOT filtered — that's a consumer decision.
+
+      # --- measures ---------------------------------------------------------
+      - name: passenger_count
+        data_type: bigint
+        description: >
+          Driver-entered. Frequently NULL or zero; not a reliable count.
+
+      - name: trip_distance_miles
+        data_type: double
+        description: Taximeter distance in miles.
+
+      - name: fare_amount
+        data_type: double
+      - name: extra_amount
+        data_type: double
+      - name: mta_tax_amount
+        data_type: double
+      - name: tip_amount
+        data_type: double
+        description: Cash tips are not captured — credit card only.
+      - name: tolls_amount
+        data_type: double
+      - name: improvement_surcharge
+        data_type: double
+      - name: congestion_surcharge
+        data_type: double
+
+      - name: cbd_congestion_fee
+        data_type: double
+        description: >
+          CBD congestion pricing. The source column does not exist before
+          2025; coalesced to 0 so a NULL cannot poison downstream sums.
+
+      - name: airport_fee
+        data_type: double
+        description: Yellow taxi only. NULL for green.
+
+      - name: ehail_fee
+        data_type: double
+        description: Green taxi only. NULL for yellow.
+
+      - name: total_amount
+        data_type: double
+        description: >
+          Not tested for positivity. Negative totals are legitimate for
+          voided and refunded trips.
+
+      - name: store_and_forward_flag
+        data_type: string
+        description: Y when the trip was held in vehicle memory before send.
+
+      # --- lineage ----------------------------------------------------------
+      - name: source_period
+        data_type: string
+        description: Source file month, YYYY-MM, from the S3 partition path.
+        constraints:
+          - type: not_null
+
+      - name: source_file
+        data_type: string
+        description: Full S3 path of the file this row originated from.
+
+      - name: loaded_at
+        data_type: timestamp
+        description: When the row was loaded into the raw catalog.
+
+      - name: updated_at
+        data_type: timestamp
+        description: When this dbt run produced the row.
+
+      - name: updated_by
+        data_type: string
+        description: Databricks principal that executed the run.
