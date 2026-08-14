@@ -198,9 +198,11 @@ Asset relationships explain the execution path
 
 ### dbt
 Transforms ingested source data from `raw` through `transform` and into the `formal` layer ultimately producing fact (nyc_trips) and dimension (dim_vendor) tables.  Please see the 'Catalog' section above for why I choose not to use medalion.
+
+#### Lineage
 ![dbt Lineage](docs/diagrams/dbt_lineage.jpg)
 
-Code
+#### Files
 ![dbt files](docs/diagrams/dbt_code.jpg)
 ---
 ## Gotchas
