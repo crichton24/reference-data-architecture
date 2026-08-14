@@ -95,7 +95,7 @@ jobs:
       - name: Install
         run: pip install sqlfluff
       - name: Lint DDL
-        run: sqlfluff lint databricks/ddl --dialect databricks --disable-progress-bar
+        run: sqlfluff lint databricks/ddl --templater raw --disable-progress-bar
       # Requires DATABRICKS_HOST and DATABRICKS_TOKEN as repo secrets.
       # Uncomment once those are configured.
       # - name: Validate bundle
