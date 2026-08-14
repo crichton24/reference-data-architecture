@@ -15,6 +15,9 @@ jobs:
   # this, so a dbt-only PR doesn't run the Terraform checks.
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read      # required by paths-filter on PRs
     outputs:
       airflow: ${{ steps.filter.outputs.airflow }}
       dbt: ${{ steps.filter.outputs.dbt }}
@@ -22,7 +25,7 @@ jobs:
       infra: ${{ steps.filter.outputs.infra }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3 #check fo v4
+      - uses: dorny/paths-filter@v4 
         id: filter
         with:
           filters: |
