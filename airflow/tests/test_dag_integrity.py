@@ -8,11 +8,12 @@ classic omitted instantiation call at the bottom of a TaskFlow DAG.
 No scheduler, no database, no credentials required.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
+
 from airflow.models import DagBag
-import sys
 
 DAG_DIR = Path(__file__).parent.parent / "dags"
 
@@ -20,6 +21,7 @@ DAG_DIR = Path(__file__).parent.parent / "dags"
 # sibling modules like assets.py. pytest doesn't, so DagBag would report an
 # ImportError for every DAG that imports from assets.
 sys.path.insert(0, str(DAG_DIR))
+
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:

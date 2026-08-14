@@ -24,7 +24,7 @@
 x-airflow-common: &airflow-common
   build:
     context: ../airflow
-  env_file: ../.env 
+  env_file: ../.env
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
@@ -49,7 +49,7 @@ x-airflow-common: &airflow-common
     #   docker compose exec airflow-scheduler airflow connections get aws_default
     AIRFLOW_CONN_AWS_DEFAULT: '{"conn_type":"aws","login":"${AWS_ACCESS_KEY_ID}","password":"${AWS_SECRET_ACCESS_KEY}","extra":{"region_name":"${AWS_DEFAULT_REGION}"}}'
     AIRFLOW_CONN_DATABRICKS_DEFAULT: '{"conn_type":"databricks","host":"${DATABRICKS_HOST}","password":"${DATABRICKS_TOKEN}"}' #full access since it's a personal token, not a service principal.  We're on a free account
-    
+
     #new for adding dbt to airflow container.  dbt needs to know where its profiles.yml is, and the databricks connection info is in there.
     DBT_PROFILES_DIR: /dbt
     DATABRICKS_HTTP_PATH: ${DATABRICKS_HTTP_PATH}

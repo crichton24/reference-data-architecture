@@ -38,11 +38,12 @@ import logging
 import os  # for environment variables specifically sql warehouse path
 
 import pendulum
+from assets import BUCKET, LANDING_PREFIX, ZONE_LANDED_ASSET, ZONE_LOOKUP_ASSET
+
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.sdk import dag, task
-from assets import BUCKET, LANDING_PREFIX, ZONE_LANDED_ASSET, ZONE_LOOKUP_ASSET
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,6 @@ def _sql_hook() -> DatabricksSqlHook:
     doc_md=__doc__,
 )
 def nyc_tlc_ingest_taxi_zone_s3_to_databricks():
-
     # -----------------------------------------------------------------------
     # TASK 1: read provenance
     # -----------------------------------------------------------------------

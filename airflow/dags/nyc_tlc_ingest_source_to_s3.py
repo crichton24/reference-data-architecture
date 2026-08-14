@@ -56,12 +56,13 @@ from pathlib import Path  # object-oriented file paths
 # Third-party — installed via pip.
 import pendulum  # datetime library Airflow uses; nicer than stdlib datetime
 import requests  # the standard way to make HTTP calls in Python
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.sdk import dag, task
-from airflow.sdk.exceptions import AirflowSkipException
 
 # use assets.py for shared asset definitions
 from assets import LANDING_ASSET
+
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.sdk import dag, task
+from airflow.sdk.exceptions import AirflowSkipException
 
 # A logger named after this module. Anything you log here shows up in the
 # Airflow UI under the task's Logs tab. Use this instead of print() — print

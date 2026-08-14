@@ -1,6 +1,6 @@
 # Reference Architecture
 
-A working reference architecture and boiler-plate for establishing conventions 
+A working reference architecture and boiler-plate for establishing conventions
 in design, naming, and infrastructure across an enterprise data program.
 
 It pairs with the [Data & Analytics Governance
@@ -17,18 +17,18 @@ rejected and why.
 
 **This is a living repository.** The baseline is refined continuously as
 enterprise deployment, methodology, and tooling advance. Decisions recorded
-here are largely superseded rather than rewritten, so the reasoning behind 
+here are largely superseded rather than rewritten, so the reasoning behind
 a change remains available.
 
-**Security choices favor low-cost deployment.** The architecture design is 
-rooted in prior enterprise deployments, but many implementation decisions here 
+**Security choices favor low-cost deployment.** The architecture design is
+rooted in prior enterprise deployments, but many implementation decisions here
 target Docker and free tiers — personal access tokens rather than service
 principals, long-lived IAM keys rather than assumed roles, and simplified
 authentication in the local stack. An enterprise deployment of the same
 technologies requires different choices to achieve least-privilege access.
 These constraints are documented in the relevant ADRs and in Known Gaps.
 
-**AI**  Claude was utilized in writing code and documentation with heavy 
+**AI**  Claude was utilized in writing code and documentation with heavy
 guidance and modification from myself.
 
 ## Next Steps
@@ -97,10 +97,10 @@ with enforced contracts and governance tags.
 
 ### Why not Medalion?
 This design choice is specifically a variant of the popular "medallion" structure of bronze, silver,
-and gold, which can be problematic for enterprise deployments. The downstream confusion and 
+and gold, which can be problematic for enterprise deployments. The downstream confusion and
 potential collision of governance between silver and gold often causes more problems than it solves.
-Granting analysts access to raw and formal only allows for faster speed to market for (unsurprisngely) 
-analysis and more stability in corporate reporting.  Data engineers work with analysts in parallel to 
+Granting analysts access to raw and formal only allows for faster speed to market for (unsurprisngely)
+analysis and more stability in corporate reporting.  Data engineers work with analysts in parallel to
 build out the formal layer.
 
 It also avoids "zombie" datasets in silver, which is often deprioritized for the next data demand.

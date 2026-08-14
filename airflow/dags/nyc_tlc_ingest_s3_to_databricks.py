@@ -43,10 +43,11 @@ import logging
 import os  # for environment variables specifically sql warehouse path
 
 import pendulum
+from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, RAW_ALL_ASSETS
+
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.sdk import dag, task
-from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, RAW_ALL_ASSETS
 
 log = logging.getLogger(__name__)
 
@@ -123,7 +124,6 @@ def _sql_hook() -> DatabricksSqlHook:
     doc_md=__doc__,
 )
 def nyc_tlc_load_raw():
-
     # -----------------------------------------------------------------------
     # TASK 1: expand the config into work items
     # -----------------------------------------------------------------------

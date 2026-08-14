@@ -43,12 +43,13 @@ WHY EVERY STEP RUNS EVERY TIME
 from __future__ import annotations
 
 import pendulum
-from airflow.providers.standard.operators.bash import BashOperator
-from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import TaskGroup, dag
 
 # use assets.py for shared asset definitions
 from assets import FORMAL_ALL_ASSETS, RAW_ALL_ASSETS
+
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import TaskGroup, dag
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -87,7 +88,6 @@ def dbt_task(task_id: str, command: str, **kwargs) -> BashOperator:
     doc_md=__doc__,
 )
 def nyc_tlc_transform():
-
     # Installs dbt_utils from packages.yml. Fast and idempotent when already
     # present — cheap insurance against a stale image.
     deps = dbt_task("dbt_deps", "deps")

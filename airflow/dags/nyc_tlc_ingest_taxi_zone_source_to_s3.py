@@ -36,10 +36,11 @@ import logging
 
 import pendulum
 import requests
+from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, ZONE_LANDED_ASSET
+
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowSkipException
-from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, ZONE_LANDED_ASSET
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,6 @@ def _s3() -> S3Hook:
     doc_md=__doc__,
 )
 def nyc_tlc_ingest_taxi_zone_source_to_s3():
-
     # -----------------------------------------------------------------------
     # TASK 1: download and validate
     # -----------------------------------------------------------------------
