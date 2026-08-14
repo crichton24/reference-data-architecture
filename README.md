@@ -32,7 +32,9 @@ These constraints are documented in the relevant ADRs and in Known Gaps.
 guidance and modification from myself.
 
 ## Next Steps
-Analytics, data science, and AI reference architecture and governance standards.
+ - Analytics, data science, and AI reference architecture and governance standards.
+ - Kafka stream
+ - S3 Terraform
 
 
 ---
