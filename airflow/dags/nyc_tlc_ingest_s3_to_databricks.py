@@ -43,7 +43,7 @@ import logging
 
 import os #for environment variables specifically sql warehouse path
 
-from assets import LANDING_ASSET, RAW_ALL_ASSETS
+from assets import BUCKET, LANDING_PREFIX, LANDING_ASSET, RAW_ALL_ASSETS
 
 import pendulum
 from airflow.sdk import dag, task
