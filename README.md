@@ -1,14 +1,56 @@
-# NYC Transit Lakehouse
+# Reference Architecture
+
+A working reference architecture and boiler-plate for establishing conventions 
+in design, naming, and infrastructure across an enterprise data program.
+
+It pairs with the [Data & Analytics Governance
+Standards](https://github.com/crichton24/Data-Analytics-Team-Standards)
+repository, which provides the corresponding principles, quality norms, and
+release control standards as a starting point for adaptation.
+
+The implementation is deliberately end-to-end — ingestion, orchestration,
+transformation, and governance. Every significant decision is recorded as
+an [Architecture Decision Record](docs/decisions/), including the options
+rejected and why.
+
+## Disclaimers
+
+**This is a living repository.** The baseline is refined continuously as
+enterprise deployment, methodology, and tooling advance. Decisions recorded
+here are largely superseded rather than rewritten, so the reasoning behind 
+a change remains available.
+
+**Security choices favor low-cost deployment.** The architecture design is 
+rooted in prior enterprise deployments, but many implementation decisions here 
+target Docker and free tiers — personal access tokens rather than service
+principals, long-lived IAM keys rather than assumed roles, and simplified
+authentication in the local stack. An enterprise deployment of the same
+technologies requires different choices to achieve least-privilege access.
+These constraints are documented in the relevant ADRs and in Known Gaps.
+
+**AI**  Claude was utilized in writing code and documentation with heavy 
+guidance and modification from myself.
+
+
+
+
+---
+# NYC Transportation Lakehouse
 
 An end-to-end data platform built on public NYC transportation data. Batch
 ingestion, a governed lakehouse, dimensional models with enforced contracts,
 and event-driven orchestration throughout.
 
-The design decisions are documented in [`docs/decisions/`](docs/decisions/) and
-are the most useful thing in this repo — the code shows what was built, the
-ADRs show what was considered and rejected.
+The design decisions are documented in [`docs/decisions/`](docs/decisions/) including
+ADRs which describe what was considered and rejected.
 
 ## Architecture
+
+### Application Architecture
+![Application Architecture](docs/diagrams/reference_architecture.jpg)
+
+---
+### Detailed Architecture
 
 ```
 NYC TLC trip records ──┐
@@ -37,7 +79,7 @@ nyc_tlc_transform                    nyc_tlc_ingest_taxi_zone_s3_to_databricks
 
 ## Catalog structure
 
-The medallion layer is the **catalog**; the domain is the **schema**
+The primary layer is the **catalog**; the domain is the **schema**
 (ADR [0009](docs/decisions/0009-medallion-catalogs-with-literal-schemas.md)).
 
 | Layer | Objects | Contracted |
@@ -49,6 +91,16 @@ The medallion layer is the **catalog**; the domain is the **schema**
 `raw` is append-only and takes whatever the source sends. `transform` renames
 and types. `formal` is the only layer consumers should query, and the only one
 with enforced contracts and governance tags.
+
+### Why not Medalion?
+This design choice is specifically a variant of the popular "medallion" structure of bronze, silver,
+and gold, which can be problematic for enterprise deployments. The downstream confusion and 
+potential collision of governance between silver and gold often causes more problems than it solves.
+Granting analysts access to raw and formal only allows for faster speed to market for (unsurprisngely) 
+analysis and more stability in corporate reporting.  Data engineers work with analysts in parallel to 
+build out the formal layer.
+
+It also avoids "zombie" datasets in silver, which is often deprioritized for the next data demand.
 
 ## Repo layout
 
@@ -127,6 +179,29 @@ Run `databricks/ddl/` in numeric order.
 `AIRFLOW_CONN_*` environment variables (ADR
 [0006](docs/decisions/0006-connections-as-environment-variables.md)).
 
+---
+
+## Images
+### Databricks
+Three primary catalogs for lifecycle management:  raw, transform, and formal.  Only raw and formal are exposed to analysts and other downstream consumers.  Formal_Distribution is for content sent to other applications.
+
+![Databricks Catalogs](docs/diagrams/databricks_catalogs_tables.jpg)
+
+
+### Airflow
+Ingests records from the source into S3, loads into Databricks, and creates a formalized fact & dimension schema.
+![Airflow DAGS](docs/diagrams/airflow_dags.jpg)
+
+Asset relationships explain the execution path
+![Airflow Assets](docs/diagrams/ariflow_assets.jpg)
+
+### dbt
+Transforms ingested source data from `raw` through `transform` and into the `formal` layer ultimately producing fact (nyc_trips) and dimension (dim_vendor) tables.  Please see the 'Catalog' section above for why I choose not to use medalion.
+![dbt Lineage](docs/diagrams/dbt_lineage.jpg)
+
+Code
+![dbt files](docs/diagrams/dbt_code.jpg)
+---
 ## Gotchas
 
 Hard-won, in rough order of how much time each cost.
