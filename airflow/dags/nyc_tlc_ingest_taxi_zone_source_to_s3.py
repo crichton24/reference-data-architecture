@@ -39,7 +39,6 @@ import requests
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowSkipException
-
 from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, ZONE_LANDED_ASSET
 
 log = logging.getLogger(__name__)
@@ -74,7 +73,14 @@ def _s3() -> S3Hook:
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 2, "retry_delay": pendulum.duration(minutes=5)},
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","SOURCE_TO_S3","NYC TRANSIT"],
+    tags=[
+        "NYC TAXI AND LIMOUSINE COMMISSION",
+        "RAW",
+        "BATCH",
+        "PUBLIC",
+        "SOURCE_TO_S3",
+        "NYC TRANSIT",
+    ],
     doc_md=__doc__,
 )
 def nyc_tlc_ingest_taxi_zone_source_to_s3():
@@ -148,7 +154,8 @@ def nyc_tlc_ingest_taxi_zone_source_to_s3():
         if changed:
             log.info(
                 "Zone lookup changed: %s -> %s",
-                (prior_digest or "none")[:12], downloaded["sha256"][:12],
+                (prior_digest or "none")[:12],
+                downloaded["sha256"][:12],
             )
         else:
             log.info("Zone lookup unchanged (sha %s)", downloaded["sha256"][:12])
@@ -176,12 +183,8 @@ def nyc_tlc_ingest_taxi_zone_source_to_s3():
         stamp = pendulum.now("UTC").format("YYYYMMDDHHmmss")
         archive_key = f"{REFERENCE_PREFIX}/history/taxi_zone_lookup_{stamp}.csv"
 
-        hook.load_bytes(
-            bytes_data=content, key=archive_key, bucket_name=BUCKET, replace=True
-        )
-        hook.load_bytes(
-            bytes_data=content, key=CURRENT_KEY, bucket_name=BUCKET, replace=True
-        )
+        hook.load_bytes(bytes_data=content, key=archive_key, bucket_name=BUCKET, replace=True)
+        hook.load_bytes(bytes_data=content, key=CURRENT_KEY, bucket_name=BUCKET, replace=True)
 
         log.info("Landed s3://%s/%s (%s rows)", BUCKET, CURRENT_KEY, result["rows"])
 

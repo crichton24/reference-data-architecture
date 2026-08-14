@@ -35,17 +35,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os  # for environment variables specifically sql warehouse path
 
 import pendulum
-
-import os #for environment variables specifically sql warehouse path
-
-
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
 from airflow.sdk import dag, task
-
 from assets import BUCKET, LANDING_PREFIX, ZONE_LANDED_ASSET, ZONE_LOOKUP_ASSET
 
 log = logging.getLogger(__name__)
@@ -62,7 +58,7 @@ TARGET_TABLE = "raw.nyc_tlc.taxi_zone_lookup"
 AWS_CONN_ID = "aws_default"
 DATABRICKS_CONN_ID = "databricks_default"
 
-#SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/REPLACE_ME"
+# SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/REPLACE_ME"
 SQL_WAREHOUSE_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
 
 MIN_EXPECTED_ROWS = 200
@@ -86,7 +82,14 @@ def _sql_hook() -> DatabricksSqlHook:
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 2, "retry_delay": pendulum.duration(minutes=5)},
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","S3_TO_DATABRICKS", "NYC TRANSIT"],
+    tags=[
+        "NYC TAXI AND LIMOUSINE COMMISSION",
+        "RAW",
+        "BATCH",
+        "PUBLIC",
+        "S3_TO_DATABRICKS",
+        "NYC TRANSIT",
+    ],
     doc_md=__doc__,
 )
 def nyc_tlc_ingest_taxi_zone_s3_to_databricks():
@@ -108,8 +111,7 @@ def nyc_tlc_ingest_taxi_zone_s3_to_databricks():
             hook = _s3()
             if hook.check_for_key(STATE_KEY, bucket_name=BUCKET):
                 state = json.loads(hook.read_key(STATE_KEY, bucket_name=BUCKET))
-                log.info("Source sha %s, %s rows", state.get("sha256", "?")[:12],
-                         state.get("rows"))
+                log.info("Source sha %s, %s rows", state.get("sha256", "?")[:12], state.get("rows"))
                 return state
         except Exception as exc:  # noqa: BLE001 — provenance is best-effort
             log.warning("Could not read state file: %s", exc)
@@ -160,9 +162,7 @@ def nyc_tlc_ingest_taxi_zone_s3_to_databricks():
         produces an empty table. Without this check that failure is
         indistinguishable from success until something downstream breaks.
         """
-        rows = _sql_hook().run(
-            f"SELECT COUNT(*) FROM {loaded['table']}", handler=fetch_all_handler
-        )
+        rows = _sql_hook().run(f"SELECT COUNT(*) FROM {loaded['table']}", handler=fetch_all_handler)
         count = rows[0][0] if rows else 0
         log.info("%s now has %s rows", loaded["table"], count)
 

@@ -40,16 +40,13 @@ PREREQUISITES
 from __future__ import annotations
 
 import logging
-
-import os #for environment variables specifically sql warehouse path
-
-from assets import BUCKET, LANDING_PREFIX, LANDING_ASSET, RAW_ALL_ASSETS
+import os  # for environment variables specifically sql warehouse path
 
 import pendulum
-from airflow.sdk import dag, task
 from airflow.providers.common.sql.hooks.sql import fetch_all_handler
 from airflow.providers.databricks.hooks.databricks_sql import DatabricksSqlHook
-
+from airflow.sdk import dag, task
+from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, RAW_ALL_ASSETS
 
 log = logging.getLogger(__name__)
 
@@ -59,12 +56,12 @@ log = logging.getLogger(__name__)
 
 # Must match nyc_tlc_ingest.py exactly — both the bucket and the prefix.
 ## NOW INGESTED FROM assets.py
-#BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
-#LANDING_PREFIX = "nyc-tlc"
+# BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
+# LANDING_PREFIX = "nyc-tlc"
 
 # The trigger. Identical string to the producer's outlet, or this never fires.
 ## NOW INGESTED FROM assets.py
-#LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
+# LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
 
 # THE SINGLE SOURCE OF TRUTH. One entry per table. Everything downstream —
 # task count, source paths, verification — derives from this dict, so adding
@@ -91,7 +88,7 @@ TABLES = {
 DATABRICKS_CONN_ID = "databricks_default"
 
 # SQL warehouse > Connection details tab. Looks like /sql/1.0/warehouses/abc123.
-#SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/8bf3f67b02373090"
+# SQL_WAREHOUSE_HTTP_PATH = "/sql/1.0/warehouses/8bf3f67b02373090"
 SQL_WAREHOUSE_HTTP_PATH = os.environ["DATABRICKS_HTTP_PATH"]
 
 # Set False if the target tables have only TLC's own columns. Quickest way to
@@ -109,16 +106,20 @@ def _sql_hook() -> DatabricksSqlHook:
 
 @dag(
     dag_id="nyc_tlc_ingest_s3_to_databricks",
-
     # THE SCHEDULING ANSWER: a list of assets instead of a cron string. This
     # DAG is event-driven — it runs when LANDING_ASSET is updated.
     schedule=[LANDING_ASSET],
-
     start_date=pendulum.datetime(2026, 1, 1, tz="America/New_York"),
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 2, "retry_delay": pendulum.duration(minutes=5)},
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","S3_TO_DATABRICKS"],  # UI filter labels
+    tags=[
+        "NYC TAXI AND LIMOUSINE COMMISSION",
+        "RAW",
+        "BATCH",
+        "PUBLIC",
+        "S3_TO_DATABRICKS",
+    ],  # UI filter labels
     doc_md=__doc__,
 )
 def nyc_tlc_load_raw():
@@ -173,7 +174,7 @@ def nyc_tlc_load_raw():
                 current_timestamp()              AS _loaded_at,
                 'ktf1234'                        AS _loaded_by,  -- TODO: replace with your Databricks user ID
                 _metadata.file_modification_time AS _source_modified_at
-              FROM '{target['source']}'
+              FROM '{target["source"]}'
             )"""
         else:
             source_expr = f"'{target['source']}'"
@@ -184,7 +185,7 @@ def nyc_tlc_load_raw():
         # Both are needed to survive TLC adding a column mid-year, as they did
         # with cbd_congestion_fee in 2025.
         sql = f"""
-            COPY INTO {target['table']}
+            COPY INTO {target["table"]}
             FROM {source_expr}
             FILEFORMAT = PARQUET
             FORMAT_OPTIONS ('mergeSchema' = 'true')

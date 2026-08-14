@@ -46,23 +46,22 @@ WORKER IMAGE NEEDS
 # Python versions. Harmless to always include.
 from __future__ import annotations
 
-#use assets.py for shared asset definitions
-from assets import LANDING_ASSET, RAW_ALL_ASSETS
-
 # Standard library — ships with Python, nothing to install.
-import hashlib      # cryptographic hashes; used here to fingerprint a schema
-import json         # convert between Python dicts and JSON text
-import logging      # structured logging (better than print)
-import tempfile     # scratch directories that clean themselves up
+import hashlib  # cryptographic hashes; used here to fingerprint a schema
+import json  # convert between Python dicts and JSON text
+import logging  # structured logging (better than print)
+import tempfile  # scratch directories that clean themselves up
 from pathlib import Path  # object-oriented file paths
 
 # Third-party — installed via pip.
-import pendulum     # datetime library Airflow uses; nicer than stdlib datetime
-import requests     # the standard way to make HTTP calls in Python
+import pendulum  # datetime library Airflow uses; nicer than stdlib datetime
+import requests  # the standard way to make HTTP calls in Python
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowSkipException
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
+# use assets.py for shared asset definitions
+from assets import LANDING_ASSET
 
 # A logger named after this module. Anything you log here shows up in the
 # Airflow UI under the task's Logs tab. Use this instead of print() — print
@@ -89,7 +88,7 @@ BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data"
 # Start narrow. fhvhv is ~400-500 MB/month; yellow is ~50 MB.
 DATASETS = ("yellow", "green")
 
-LAG_MONTHS = 2       # TLC's nominal publication delay
+LAG_MONTHS = 2  # TLC's nominal publication delay
 LOOKBACK_MONTHS = 8  # how many months back we re-check on every run
 
 BUCKET = "nyc-tlc-raw-data-105803061132-us-east-2-an"
@@ -112,7 +111,7 @@ REQUEST_TIMEOUT = 60  # seconds; always set one, or a hung server hangs your tas
 # never fires.
 
 ## now using assets.py for shared asset definitions
-#LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
+# LANDING_ASSET = Asset(f"s3://{BUCKET}/{LANDING_PREFIX}/")
 
 
 def _s3() -> S3Hook:
@@ -143,32 +142,33 @@ def _s3() -> S3Hook:
 #
 # Practically: it turns an ordinary Python function into an Airflow workflow.
 @dag(
-    dag_id="nyc_tlc_ingest_source_to_s3",      # unique name shown in the UI
-
+    dag_id="nyc_tlc_ingest_source_to_s3",  # unique name shown in the UI
     # Cron syntax: minute hour day-of-month month day-of-week.
     # "0 7 * * *" = 7:00 AM every day.
     schedule="0 7 * * *",
-
     # Airflow will not schedule any run before this moment.
     start_date=pendulum.datetime(2026, 1, 1, tz="America/New_York"),
-
     # catchup=False means: on first deploy, don't retroactively run every day
     # since start_date. Leave this False unless you specifically want a
     # backfill — catchup=True on a daily DAG with an old start date will
     # instantly queue hundreds of runs.
     catchup=False,
-
     # Never let two runs of this DAG overlap. Without it, a slow run could
     # collide with the next one and both would fight over the manifest file.
     max_active_runs=1,
-
     # Applied to every task unless overridden: retry 3 times, 10 min apart.
     # Network calls fail transiently; retries turn a 3 AM page into a non-event.
     default_args={"retries": 3, "retry_delay": pendulum.duration(minutes=10)},
-
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "RAW", "BATCH","PUBLIC","SOURCE_TO_S3", "NYC TRANSIT"],  # UI filter labels
+    tags=[
+        "NYC TAXI AND LIMOUSINE COMMISSION",
+        "RAW",
+        "BATCH",
+        "PUBLIC",
+        "SOURCE_TO_S3",
+        "NYC TRANSIT",
+    ],  # UI filter labels
     doc_md=__doc__,  # __doc__ is the triple-quoted string at the top of this
-                     # file; this renders it into the UI as documentation
+    # file; this renders it into the UI as documentation
 )
 def nyc_tlc_ingest():
     # Everything indented under here is INSIDE the DAG definition. Tasks are
@@ -219,11 +219,7 @@ def nyc_tlc_ingest():
         # pendulum objects are IMMUTABLE — .subtract() returns a new object
         # rather than modifying the original. That prevents a whole category
         # of date bugs.
-        anchor = (
-            pendulum.instance(data_interval_end)
-            .start_of("month")
-            .subtract(months=LAG_MONTHS)
-        )
+        anchor = pendulum.instance(data_interval_end).start_of("month").subtract(months=LAG_MONTHS)
 
         out = []  # accumulator: start empty, append as we go
 
@@ -251,7 +247,7 @@ def nyc_tlc_ingest():
                 )
         return out
 
-# -----------------------------------------------------------------------
+    # -----------------------------------------------------------------------
     # TASK 3: ask the server which of those actually exist
     # -----------------------------------------------------------------------
     @task
@@ -275,9 +271,7 @@ def nyc_tlc_ingest():
         # try/except catches connection-level failures — DNS, TLS, timeouts —
         # which raise rather than returning a response object at all.
         try:
-            resp = requests.head(
-                candidate["url"], timeout=REQUEST_TIMEOUT, allow_redirects=True
-            )
+            resp = requests.head(candidate["url"], timeout=REQUEST_TIMEOUT, allow_redirects=True)
         except requests.RequestException as exc:
             log.warning("HEAD failed for %s: %s", candidate["filename"], exc)
             return None
@@ -291,9 +285,7 @@ def nyc_tlc_ingest():
         # only builds the message if this level is enabled. Minor here,
         # meaningful in a hot loop.
         if resp.status_code in (403, 404):
-            log.info(
-                "Not published yet (%s): %s", resp.status_code, candidate["filename"]
-            )
+            log.info("Not published yet (%s): %s", resp.status_code, candidate["filename"])
             return None
 
         # Anything else in the 4xx/5xx range is unexpected — a 503, a rate
@@ -303,7 +295,8 @@ def nyc_tlc_ingest():
         if resp.status_code >= 400:
             log.warning(
                 "Unexpected %s for %s — will retry next run",
-                resp.status_code, candidate["filename"],
+                resp.status_code,
+                candidate["filename"],
             )
             return None
 
@@ -329,7 +322,9 @@ def nyc_tlc_ingest():
         if prior:
             log.warning(
                 "Restated file detected for %s (etag %s -> %s)",
-                candidate["key"], prior.get("etag"), etag,
+                candidate["key"],
+                prior.get("etag"),
+                etag,
             )
 
         # `**candidate` is DICTIONARY UNPACKING: it splats all of candidate's
@@ -359,6 +354,7 @@ def nyc_tlc_ingest():
         targets = [p for p in probed if p]
         log.info("%d file(s) to ingest this run", len(targets))
         return targets
+
     # -----------------------------------------------------------------------
     # TASK 5: actually download
     # -----------------------------------------------------------------------
@@ -394,9 +390,7 @@ def nyc_tlc_ingest():
 
             # stream=True means "don't load the whole response into memory."
             # Critical here: some of these files are hundreds of megabytes.
-            with requests.get(
-                target["url"], stream=True, timeout=REQUEST_TIMEOUT
-            ) as r:
+            with requests.get(target["url"], stream=True, timeout=REQUEST_TIMEOUT) as r:
                 r.raise_for_status()
                 with local.open("wb") as fh:  # "wb" = write, binary mode
                     # Pull the file down 8 MB at a time and write each chunk
@@ -429,9 +423,7 @@ def nyc_tlc_ingest():
 
             # Upload completes before the object becomes visible in S3, so a
             # reader never sees a partially written file.
-            _s3().load_file(
-                filename=str(local), key=dest_key, bucket_name=BUCKET, replace=True
-            )
+            _s3().load_file(filename=str(local), key=dest_key, bucket_name=BUCKET, replace=True)
         # Dedent past the `with` — temp directory is now gone automatically.
 
         log.info("Landed s3://%s/%s (%.1f MB)", BUCKET, dest_key, size / 1024**2)
@@ -468,9 +460,7 @@ def nyc_tlc_ingest():
             # setdefault is a useful idiom: "give me the value at this key, and
             # if the key doesn't exist, create it with this default first."
             # Saves an if-statement on every loop.
-            by_dataset.setdefault(entry["dataset"], set()).add(
-                entry.get("schema_hash", "")
-            )
+            by_dataset.setdefault(entry["dataset"], set()).add(entry.get("schema_hash", ""))
 
         for r in results:
             known = by_dataset.get(r["dataset"], set())
@@ -481,7 +471,9 @@ def nyc_tlc_ingest():
             if known and r["schema_hash"] not in known:
                 log.warning(
                     "Schema drift in %s at %s. Columns: %s",
-                    r["dataset"], r["period"], r["columns"],
+                    r["dataset"],
+                    r["period"],
+                    r["columns"],
                 )
             by_dataset.setdefault(r["dataset"], set()).add(r["schema_hash"])
 

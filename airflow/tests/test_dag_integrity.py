@@ -23,9 +23,8 @@ def dagbag() -> DagBag:
 
 def test_no_import_errors(dagbag: DagBag) -> None:
     """Every file in dags/ imports cleanly."""
-    assert not dagbag.import_errors, (
-        "DAG import failures:\n"
-        + "\n".join(f"  {f}: {e}" for f, e in dagbag.import_errors.items())
+    assert not dagbag.import_errors, "DAG import failures:\n" + "\n".join(
+        f"  {f}: {e}" for f, e in dagbag.import_errors.items()
     )
 
 
@@ -47,9 +46,7 @@ def test_every_dag_is_tagged(dagbag: DagBag) -> None:
 def test_every_dag_has_retries(dagbag: DagBag) -> None:
     """House rule: anything touching a network needs retries."""
     no_retries = [
-        dag_id
-        for dag_id, dag in dagbag.dags.items()
-        if dag.default_args.get("retries", 0) < 1
+        dag_id for dag_id, dag in dagbag.dags.items() if dag.default_args.get("retries", 0) < 1
     ]
     assert not no_retries, f"DAGs without retries: {no_retries}"
 

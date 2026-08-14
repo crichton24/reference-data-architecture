@@ -42,14 +42,13 @@ WHY EVERY STEP RUNS EVERY TIME
 
 from __future__ import annotations
 
-#use assets.py for shared asset definitions
-from assets import LANDING_ASSET, RAW_ALL_ASSETS, ZONE_LOOKUP_ASSET, FORMAL_ALL_ASSETS
-
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import dag
-from airflow.sdk import TaskGroup
+from airflow.sdk import TaskGroup, dag
+
+# use assets.py for shared asset definitions
+from assets import FORMAL_ALL_ASSETS, RAW_ALL_ASSETS
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION
@@ -84,7 +83,7 @@ def dbt_task(task_id: str, command: str, **kwargs) -> BashOperator:
     catchup=False,
     max_active_runs=1,
     default_args={"retries": 1, "retry_delay": pendulum.duration(minutes=5)},
-    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "TRANSFORM","PUBLIC","DATABRICKS","NYC TRANSIT"],
+    tags=["NYC TAXI AND LIMOUSINE COMMISSION", "TRANSFORM", "PUBLIC", "DATABRICKS", "NYC TRANSIT"],
     doc_md=__doc__,
 )
 def nyc_tlc_transform():
@@ -106,9 +105,7 @@ def nyc_tlc_transform():
 
     with TaskGroup("dimensions") as dimensions:
         # This ordering is the entire reason this DAG is not one dbt build.
-        observed = dbt_task(
-            "dbt_run_int_vendors", "run --select int_vendors_observed"
-        )
+        observed = dbt_task("dbt_run_int_vendors", "run --select int_vendors_observed")
         snapshot = dbt_task("dbt_snapshot", "snapshot")
         dim = dbt_task("dbt_run_dim_vendor", "run --select dim_vendor")
 
