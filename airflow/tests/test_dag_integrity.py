@@ -12,13 +12,18 @@ from pathlib import Path
 
 import pytest
 from airflow.models import DagBag
+import sys
 
 DAG_DIR = Path(__file__).parent.parent / "dags"
 
+# Airflow puts the dags folder on sys.path at runtime so DAGs can import
+# sibling modules like assets.py. pytest doesn't, so DagBag would report an
+# ImportError for every DAG that imports from assets.
+sys.path.insert(0, str(DAG_DIR))
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAG_DIR), include_examples=False)
+    return DagBag(dag_folder=str(DAG_DIR))
 
 
 def test_no_import_errors(dagbag: DagBag) -> None:
