@@ -5,7 +5,7 @@ create schema if not exists nyc_tlc
     comment 'Raw landed data. Append-only, schema-on-read, no business logic.';
 
 -- Apply governed tags to the schema
-ALTER SCHEMA nyc_tlc SET TAGS (
+alter schema nyc_tlc set tags (
     'informationClassification' = 'PUBLIC',
     'complianceClassification' = 'NONE',
     'dataDurationClassification' = 'PERMENANT',
