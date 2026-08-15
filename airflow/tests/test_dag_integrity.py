@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from airflow.models import DagBag
 
 DAG_DIR = Path(__file__).parent.parent / "dags"

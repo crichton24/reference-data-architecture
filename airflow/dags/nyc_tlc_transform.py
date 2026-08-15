@@ -43,13 +43,12 @@ WHY EVERY STEP RUNS EVERY TIME
 from __future__ import annotations
 
 import pendulum
-
-# use assets.py for shared asset definitions
-from assets import FORMAL_ALL_ASSETS, RAW_ALL_ASSETS
-
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import TaskGroup, dag
+
+# use assets.py for shared asset definitions
+from assets import FORMAL_ALL_ASSETS, RAW_ALL_ASSETS
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION

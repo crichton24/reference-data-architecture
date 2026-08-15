@@ -36,11 +36,10 @@ import logging
 
 import pendulum
 import requests
-from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, ZONE_LANDED_ASSET
-
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowSkipException
+from assets import BUCKET, LANDING_ASSET, LANDING_PREFIX, ZONE_LANDED_ASSET
 
 log = logging.getLogger(__name__)
 
