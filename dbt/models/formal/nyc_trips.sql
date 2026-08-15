@@ -54,7 +54,7 @@ filtered as (
         -- partition column so Databricks can prune, rather than scanning
         -- every row to compare timestamps.
         where source_period >= (
-            select coalesce(max(source_period), '1900-01')
+            select coalesce(max(filtered.source_period), '1900-01')
             from {{ this }}
         )
     {% endif %}
@@ -146,8 +146,9 @@ joined as (
     from filtered
 
     left join {{ ref('dim_vendor') }} as vendor
-        on filtered.vendor_id = vendor.vendor_id
-        and vendor.is_current
+        on
+            filtered.vendor_id = vendor.vendor_id
+            and vendor.is_current
 
     left join {{ ref('rate_code_lookup') }} as rate_code
         on filtered.rate_code_id = rate_code.rate_code_id

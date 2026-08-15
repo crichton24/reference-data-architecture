@@ -10,6 +10,7 @@
     TLC ships two sentinel zones (264 'Unknown', 265 'N/A') which are
     legitimate values in trip data, not errors. They're kept and flagged
     so downstream joins don't silently drop those trips.
+
 */
 
 with source as (
@@ -23,9 +24,6 @@ select
     borough,
     zone                                      as zone_name,
     service_zone,
-    case
-        when cast(locationid as bigint) in (264, 265) then true
-        else false
-    end                                       as is_unknown_zone,
+    cast(locationid as bigint) in (264, 265)  as is_unknown_zone,
     _loaded_at                                as loaded_at
 from source

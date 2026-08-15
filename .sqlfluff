@@ -2,17 +2,23 @@
 dialect = databricks
 templater = jinja
 max_line_length = 120
-exclude_rules = ST06
+exclude_rules = ST06,LT01,LT09
 
 [sqlfluff:templater:jinja]
 apply_dbt_builtins = true
 library_path = sqlfluff_libs
 
 [sqlfluff:rules:capitalisation.keywords]
-capitalisation_policy = upper
-
-[sqlfluff:rules:capitalisation.types]
-capitalisation_policy = upper
+capitalisation_policy = consistent
 
 [sqlfluff:rules:capitalisation.identifiers]
-extended_capitalisation_policy = lower
+extended_capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = consistent
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = consistent

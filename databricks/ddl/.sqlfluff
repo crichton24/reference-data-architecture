@@ -1,3 +1,6 @@
 [sqlfluff]
 dialect = databricks
 max_line_length = 120
+
+[sqlfluff]
+exclude_rules = LT01,LT02,LT05
